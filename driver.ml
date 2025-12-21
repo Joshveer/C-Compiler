@@ -1,5 +1,5 @@
 (*arch -x86_64 zsh*)
-(*ocamlc -o mycc ast.ml asm.ml lexer.ml parser.ml codegen.ml emit.ml driver.ml*)
+(*ocamlc -o mycc ast.ml asm.ml lexer.ml parser.ml tacky.ml tackygen.ml codegen.ml emit.ml driver.ml*)
 
 open Printf
 open Lexer
@@ -37,6 +37,7 @@ type stage =
   | Codegen
   | Asm
   | Full
+  | Tackygen
 
 let preprocess input_file preprocessed_file =
   let cmd = sprintf "gcc -E -P %s -o %s" input_file preprocessed_file in
@@ -63,6 +64,7 @@ let parse_args () =
       | "--lex" -> set_stage Lex; loop (i + 1)
       | "--parse" -> set_stage Parse; loop (i + 1)
       | "--codegen" -> set_stage Codegen; loop (i + 1)
+      | "--tacky" -> set_stage Tackygen; loop (i + 1)
       | "-S" -> set_stage Asm; loop (i + 1)
       | arg when String.length arg > 0 && arg.[0] = '-' ->
           fail ("unknown option: " ^ arg)
@@ -110,6 +112,11 @@ let () =
       let ast = Parser.parse tokens in
       let _ = Codegen.gen_program ast in
       ()
+  | Tackygen ->
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let tacky = Tackygen.gen_program ast in
+      print_endline (Tacky.pp_program tacky)
   | Asm ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
