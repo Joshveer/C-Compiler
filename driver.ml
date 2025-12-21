@@ -37,7 +37,10 @@ type stage =
 let run_lexer source =
   let _tokens = Lexer.lex source in
   ()
-let run_parser (_source : string) = ()
+let run_parser source =
+  let tokens = Lexer.lex source in
+  let ast = Parser.parse tokens in
+  print_endline (Ast.pp_program ast)
 let run_codegen (_source : string) = ()
 
 let run_emit (_source : string) : string =
