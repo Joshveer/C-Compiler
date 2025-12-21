@@ -2,6 +2,7 @@ type reg =
   | AX
   | DX
   | R10
+  | R11
 
 type operand =
   | Imm of int
@@ -13,7 +14,7 @@ type unary_op =
   | Neg
   | Not
 
-type binary_op = (* New *)
+type binary_op =
   | Add
   | Sub
   | Mult

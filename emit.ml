@@ -5,6 +5,7 @@ let emit_reg = function
   | AX -> "%eax"
   | DX -> "%edx"
   | R10 -> "%r10d"
+  | R11 -> "%r11d"
 
 let emit_operand = function
   | Imm i -> sprintf "$%d" i

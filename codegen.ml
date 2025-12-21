@@ -89,6 +89,15 @@ let replace_pseudos instrs =
 let fixup_program stack_size instrs =
   let rec fixup = function
     | [] -> []
+    | Asm.Binary (Asm.Mult, src, Asm.Stack s) :: rest ->
+        Asm.Mov (Asm.Stack s, Asm.Reg R11)
+        :: Asm.Binary (Asm.Mult, src, Asm.Reg R11)
+        :: Asm.Mov (Asm.Reg R11, Asm.Stack s)
+        :: fixup rest
+    | Asm.Idiv (Asm.Imm i) :: rest ->
+        Asm.Mov (Asm.Imm i, Asm.Reg R10)
+        :: Asm.Idiv (Asm.Reg R10)
+        :: fixup rest
     | Asm.Mov (Asm.Stack s1, Asm.Stack s2) :: rest ->
         Asm.Mov (Asm.Stack s1, Asm.Reg R10)
         :: Asm.Mov (Asm.Reg R10, Asm.Stack s2)
