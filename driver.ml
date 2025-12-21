@@ -44,7 +44,7 @@ let preprocess input_file preprocessed_file =
   run_cmd cmd
 
 let assemble_and_link asm_file output_file =
-  let cmd = sprintf "gcc %s -o %s" asm_file output_file in
+  let cmd = sprintf "gcc -arch x86_64 %s -o %s" asm_file output_file in
   run_cmd cmd
 
 let parse_args () =

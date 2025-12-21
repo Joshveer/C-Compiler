@@ -1,8 +1,6 @@
 open Asm
 open Printf
 
-let is_macos = true
-
 let emit_reg = function
   | AX -> "%eax"
   | R10 -> "%r10d"
@@ -14,8 +12,8 @@ let emit_operand = function
   | Pseudo _ -> failwith "Pseudo operand should have been replaced"
 
 let emit_unary_op = function
-  | Neg -> "neg"
-  | Not -> "not"
+  | Neg -> "negl"
+  | Not -> "notl"
 
 let emit_instruction = function
   | Mov (src, dst) ->
@@ -28,7 +26,7 @@ let emit_instruction = function
       "    movq %rbp, %rsp\n    popq %rbp\n    ret\n"
 
 let emit_function f =
-  let name = if is_macos then "_" ^ f.name else f.name in
+  let name = "_" ^ f.name in
   let buf = Buffer.create 1024 in
   bprintf buf "    .globl %s\n" name;
   bprintf buf "%s:\n" name;
@@ -38,8 +36,4 @@ let emit_function f =
   Buffer.contents buf
 
 let emit_program (Program f) =
-  let asm = emit_function f in
-  if not is_macos then
-    asm ^ "\n    .section .note.GNU-stack,\"\",@progbits\n"
-  else
-    asm
+  emit_function f
