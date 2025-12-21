@@ -14,29 +14,51 @@ let parse_identifier tokens =
   | Ident name :: rest -> (name, rest)
   | _ -> raise (ParseError "Expected identifier")
 
-let rec parse_exp tokens =
+let get_precedence = function
+  | Star | Slash | Percent -> 50
+  | Plus | Hyphen -> 45
+  | _ -> -1
+
+let rec parse_factor tokens =
   match tokens with
   | IntConst i :: rest -> 
       (Constant i, rest)
-      
   | Tilde :: rest ->
-      let (inner_exp, rest) = parse_exp rest in
+      let (inner_exp, rest) = parse_factor rest in
       (Unary (Complement, inner_exp), rest)
-      
   | Hyphen :: rest ->
-      let (inner_exp, rest) = parse_exp rest in
+      let (inner_exp, rest) = parse_factor rest in
       (Unary (Negate, inner_exp), rest)
-      
   | LParen :: rest ->
-      let (inner_exp, rest) = parse_exp rest in
+      let (inner_exp, rest) = parse_exp 0 rest in
       let rest = expect RParen rest in
       (inner_exp, rest)
-      
-  | _ -> raise (ParseError "Expected expression")
+  | _ -> raise (ParseError "Expected factor")
+
+and parse_exp min_prec tokens =
+  let (left, rest) = parse_factor tokens in
+  let rec loop left tokens =
+    match tokens with
+    | op_token :: rest_tokens when get_precedence op_token >= min_prec ->
+        let op = match op_token with
+          | Plus -> Add
+          | Hyphen -> Subtract
+          | Star -> Multiply
+          | Slash -> Divide
+          | Percent -> Remainder
+          | _ -> failwith "Invalid binary operator"
+        in
+        let next_min_prec = get_precedence op_token + 1 in
+        let (right, rest) = parse_exp next_min_prec rest_tokens in
+        let new_left = Binary (op, left, right) in
+        loop new_left rest
+    | _ -> (left, tokens)
+  in
+  loop left rest
 
 let parse_statement tokens =
   let tokens = expect ReturnKw tokens in
-  let exp, tokens = parse_exp tokens in
+  let exp, tokens = parse_exp 0 tokens in
   let tokens = expect Semicolon tokens in
   (Return exp, tokens)
 

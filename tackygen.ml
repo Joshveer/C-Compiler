@@ -12,6 +12,13 @@ let convert_unop = function
   | Ast.Complement -> Tacky.Complement
   | Ast.Negate -> Tacky.Negate
 
+let convert_binop = function
+  | Ast.Add -> Tacky.Add
+  | Ast.Subtract -> Tacky.Subtract
+  | Ast.Multiply -> Tacky.Multiply
+  | Ast.Divide -> Tacky.Divide
+  | Ast.Remainder -> Tacky.Remainder
+
 let rec emit_tacky e instrs =
   match e with
   | Ast.Constant c ->
@@ -22,6 +29,14 @@ let rec emit_tacky e instrs =
       let dst = Tacky.Var dst_name in
       let tacky_op = convert_unop op in
       instrs := !instrs @ [Tacky.Unary (tacky_op, src, dst)];
+      dst
+  | Ast.Binary (op, e1, e2) ->
+      let v1 = emit_tacky e1 instrs in
+      let v2 = emit_tacky e2 instrs in
+      let dst_name = make_temporary () in
+      let dst = Tacky.Var dst_name in
+      let tacky_op = convert_binop op in
+      instrs := !instrs @ [Tacky.Binary (tacky_op, v1, v2, dst)];
       dst
 
 let convert_statement (Ast.Return e) =

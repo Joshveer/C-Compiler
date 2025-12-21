@@ -1,5 +1,6 @@
 type reg =
   | AX
+  | DX
   | R10
 
 type operand =
@@ -12,9 +13,18 @@ type unary_op =
   | Neg
   | Not
 
+type binary_op = (* New *)
+  | Add
+  | Sub
+  | Mult
+
 type instruction =
   | Mov of operand * operand
   | Unary of unary_op * operand
+  | Binary of binary_op * operand * operand
+  | Cmp of operand * operand 
+  | Idiv of operand
+  | Cdq
   | AllocateStack of int
   | Ret
 

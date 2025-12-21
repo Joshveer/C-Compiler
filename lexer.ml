@@ -12,6 +12,10 @@ type token =
   | Tilde
   | Hyphen
   | Decrement
+  | Plus
+  | Star
+  | Slash
+  | Percent
 
 let is_whitespace = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -58,6 +62,10 @@ let lex (input : string) : token list =
       | '}' -> lex_at (i + 1) (RBrace :: acc)
       | ';' -> lex_at (i + 1) (Semicolon :: acc)
       | '~' -> lex_at (i + 1) (Tilde :: acc)
+      | '+' -> lex_at (i + 1) (Plus :: acc)
+      | '*' -> lex_at (i + 1) (Star :: acc)
+      | '/' -> lex_at (i + 1) (Slash :: acc)
+      | '%' -> lex_at (i + 1) (Percent :: acc)
       | '-' ->
           if i + 1 < len && input.[i + 1] = '-' then
             lex_at (i + 2) (Decrement :: acc)
