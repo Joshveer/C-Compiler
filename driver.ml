@@ -1,6 +1,7 @@
 (*arch -x86_64 zsh*)
 
 open Printf
+open Lexer
 
 let fail msg =
   eprintf "error: %s\n" msg;
@@ -33,7 +34,9 @@ type stage =
   | Asm
   | Full
 
-let run_lexer (_source : string) = ()
+let run_lexer source =
+  let _tokens = Lexer.lex source in
+  ()
 let run_parser (_source : string) = ()
 let run_codegen (_source : string) = ()
 
