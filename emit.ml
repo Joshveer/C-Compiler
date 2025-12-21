@@ -1,6 +1,8 @@
 open Asm
 open Printf
 
+let is_macos = true
+
 let emit_register = function
   | EAX -> "%eax"
 
@@ -10,18 +12,21 @@ let emit_operand = function
 
 let emit_instruction = function
   | Mov (src, dst) ->
-      sprintf "  mov %s, %s\n"
-        (emit_operand src)
-        (emit_operand dst)
+      sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
   | Ret ->
-      "  ret\n"
+      "    ret\n"
 
 let emit_function f =
-  let buf = Buffer.create 64 in
-  bprintf buf ".globl _%s\n" f.name;
-  bprintf buf "_%s:\n" f.name;
+  let name = if is_macos then "_" ^ f.name else f.name in
+  let buf = Buffer.create 1024 in
+  bprintf buf "    .globl %s\n" name;
+  bprintf buf "%s:\n" name;
   List.iter (fun i -> Buffer.add_string buf (emit_instruction i)) f.instructions;
   Buffer.contents buf
 
-let emit_program = function
-  | Program f -> emit_function f
+let emit_program (Program f) =
+  let asm = emit_function f in
+  if not is_macos then
+    asm ^ "\n    .section .note.GNU-stack,\"\",@progbits\n"
+  else
+    asm

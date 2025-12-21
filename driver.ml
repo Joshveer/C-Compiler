@@ -1,10 +1,7 @@
 (*arch -x86_64 zsh*)
+(*ocamlc -o mycc ast.ml asm.ml lexer.ml parser.ml codegen.ml emit.ml driver.ml*)
 
 open Printf
-open Lexer
-open Parser
-open Codegen
-open Emit
 
 let fail msg =
   eprintf "error: %s\n" msg;
@@ -93,22 +90,21 @@ let () =
   remove_if_exists output_file;
 
   preprocess input_file preprocessed;
-
   let source = read_file preprocessed in
   remove_if_exists preprocessed;
 
   match stage with
   | Lex ->
-      let _tokens = Lexer.lex source in
+      let _ = Lexer.lex source in
       ()
   | Parse ->
       let tokens = Lexer.lex source in
-      let _ast = Parser.parse tokens in
-      ()
+      let ast = Parser.parse tokens in
+      print_endline (Ast.pp_program ast)
   | Codegen ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let _asm_ast = Codegen.gen_program ast in
+      let _ = Codegen.gen_program ast in
       ()
   | Asm ->
       let tokens = Lexer.lex source in
