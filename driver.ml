@@ -2,6 +2,9 @@
 
 open Printf
 open Lexer
+open Parser
+open Codegen
+open Emit
 
 let fail msg =
   eprintf "error: %s\n" msg;
@@ -33,18 +36,6 @@ type stage =
   | Codegen
   | Asm
   | Full
-
-let run_lexer source =
-  let _tokens = Lexer.lex source in
-  ()
-let run_parser source =
-  let tokens = Lexer.lex source in
-  let ast = Parser.parse tokens in
-  print_endline (Ast.pp_program ast)
-let run_codegen (_source : string) = ()
-
-let run_emit (_source : string) : string =
-  ".globl _main\n_main:\n  mov $0, %eax\n  ret\n"
 
 let preprocess input_file preprocessed_file =
   let cmd = sprintf "gcc -E -P %s -o %s" input_file preprocessed_file in
@@ -102,32 +93,34 @@ let () =
   remove_if_exists output_file;
 
   preprocess input_file preprocessed;
-  
+
   let source = read_file preprocessed in
-  
   remove_if_exists preprocessed;
 
   match stage with
   | Lex ->
-      run_lexer source
+      let _tokens = Lexer.lex source in
+      ()
   | Parse ->
-      run_lexer source;
-      run_parser source
+      let tokens = Lexer.lex source in
+      let _ast = Parser.parse tokens in
+      ()
   | Codegen ->
-      run_lexer source;
-      run_parser source;
-      run_codegen source
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let _asm_ast = Codegen.gen_program ast in
+      ()
   | Asm ->
-      run_lexer source;
-      run_parser source;
-      run_codegen source;
-      let asm = run_emit source in
-      write_file asm_file asm
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let asm_ast = Codegen.gen_program ast in
+      let asm_text = Emit.emit_program asm_ast in
+      write_file asm_file asm_text
   | Full ->
-      run_lexer source;
-      run_parser source;
-      run_codegen source;
-      let asm = run_emit source in
-      write_file asm_file asm;
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let asm_ast = Codegen.gen_program ast in
+      let asm_text = Emit.emit_program asm_ast in
+      write_file asm_file asm_text;
       assemble_and_link asm_file output_file;
       remove_if_exists asm_file
