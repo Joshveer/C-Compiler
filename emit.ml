@@ -3,10 +3,17 @@ open Printf
 
 let emit_reg = function
   | AX -> "%eax"
-  | DX -> "%edx"
   | CX -> "%ecx"
+  | DX -> "%edx"
   | R10 -> "%r10d"
   | R11 -> "%r11d"
+
+let emit_reg8 = function
+  | AX -> "%al"
+  | CX -> "%cl"
+  | DX -> "%dl"
+  | R10 -> "%r10b"
+  | R11 -> "%r11b"
 
 let emit_operand = function
   | Imm i -> sprintf "$%d" i
@@ -28,6 +35,17 @@ let emit_binop = function
   | Shl -> "sall"
   | Shr -> "sarl"
 
+let emit_cc = function
+  | E -> "e"
+  | NE -> "ne"
+  | G -> "g"
+  | GE -> "ge"
+  | L -> "l"
+  | LE -> "le"
+
+let emit_local_label l =
+  sprintf "L%s" l
+
 let emit_instruction = function
   | Mov (src, dst) ->
       sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
@@ -40,10 +58,24 @@ let emit_instruction = function
         | _ -> emit_operand src 
       in
       sprintf "    %s %s, %s\n" (emit_binop op) src_str (emit_operand dst)
+  | Cmp (op1, op2) ->
+      sprintf "    cmpl %s, %s\n" (emit_operand op1) (emit_operand op2)
   | Idiv src ->
       sprintf "    idivl %s\n" (emit_operand src)
   | Cdq ->
       "    cdq\n"
+  | Jmp target ->
+      sprintf "    jmp %s\n" (emit_local_label target)
+  | JmpCC (cc, target) ->
+      sprintf "    j%s %s\n" (emit_cc cc) (emit_local_label target)
+  | SetCC (cc, op) ->
+      let op_str = match op with
+        | Reg r -> emit_reg8 r
+        | _ -> emit_operand op
+      in
+      sprintf "    set%s %s\n" (emit_cc cc) op_str
+  | Label l ->
+      sprintf "%s:\n" (emit_local_label l)
   | AllocateStack i ->
       if i = 0 then "" else sprintf "    subq $%d, %%rsp\n" i
   | Ret ->

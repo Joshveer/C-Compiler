@@ -3,6 +3,7 @@ open Printf
 type unary_op = 
   | Complement 
   | Negate
+  | Not
 
 type binary_op = 
   | Add 
@@ -15,6 +16,14 @@ type binary_op =
   | Xor 
   | ShiftLeft 
   | ShiftRight
+  | And
+  | Or
+  | Equal
+  | NotEqual
+  | LessThan
+  | LessOrEqual
+  | GreaterThan
+  | GreaterOrEqual
 
 type identifier = string
 
@@ -43,11 +52,23 @@ let pp_binop = function
   | Xor -> "Xor"
   | ShiftLeft -> "ShiftLeft"
   | ShiftRight -> "ShiftRight"
+  | And -> "And"
+  | Or -> "Or"
+  | Equal -> "Equal"
+  | NotEqual -> "NotEqual"
+  | LessThan -> "LessThan"
+  | LessOrEqual -> "LessOrEqual"
+  | GreaterThan -> "GreaterThan"
+  | GreaterOrEqual -> "GreaterOrEqual"
 
 let rec pp_exp = function
   | Constant i -> sprintf "Constant(%d)" i
   | Unary (op, e) -> 
-      let op_str = match op with Complement -> "Complement" | Negate -> "Negate" in
+      let op_str = match op with 
+        | Complement -> "Complement" 
+        | Negate -> "Negate" 
+        | Not -> "Not" 
+      in
       sprintf "Unary(%s, %s)" op_str (pp_exp e)
   | Binary (op, e1, e2) ->
       sprintf "Binary(%s, %s, %s)" (pp_binop op) (pp_exp e1) (pp_exp e2)

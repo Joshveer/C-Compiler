@@ -17,9 +17,13 @@ let get_precedence = function
   | Star | Slash | Percent -> 50
   | Plus | Hyphen -> 45
   | ShiftLeft | ShiftRight -> 40
-  | Ampersand -> 35
-  | Caret -> 30
-  | Pipe -> 25
+  | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual -> 35
+  | Equal | NotEqual -> 30
+  | Ampersand -> 25 (* BitAnd precedence usually between Eq and Shift, but based on your text I'll keep your table values or standardize. C standard: & is below ==. Text says table has gaps. Using standard C ordering adjusted for your table gaps. *)
+  | Caret -> 20     (* BitXor *)
+  | Pipe -> 15      (* BitOr *)
+  | And -> 10       (* Logical && *)
+  | Or -> 5         (* Logical || *)
   | _ -> -1
 
 let rec parse_factor tokens =
@@ -32,6 +36,9 @@ let rec parse_factor tokens =
   | Hyphen :: rest ->
       let (inner_exp, rest) = parse_factor rest in
       (Unary (Negate, inner_exp), rest)
+  | Bang :: rest ->
+      let (inner_exp, rest) = parse_factor rest in
+      (Unary (Not, inner_exp), rest)
   | LParen :: rest ->
       let (inner_exp, rest) = parse_exp 0 rest in
       let rest = expect RParen rest in
@@ -54,6 +61,14 @@ and parse_exp min_prec tokens =
           | Caret -> Xor
           | ShiftLeft -> ShiftLeft
           | ShiftRight -> ShiftRight
+          | And -> And
+          | Or -> Or
+          | Equal -> Equal
+          | NotEqual -> NotEqual
+          | LessThan -> LessThan
+          | LessOrEqual -> LessOrEqual
+          | GreaterThan -> GreaterThan
+          | GreaterOrEqual -> GreaterOrEqual
           | _ -> failwith "Invalid binary operator"
         in
         let next_min_prec = get_precedence op_token + 1 in

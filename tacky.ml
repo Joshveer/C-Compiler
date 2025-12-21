@@ -3,10 +3,13 @@ open Printf
 type unary_operator =
   | Complement
   | Negate
+  | Not
 
 type binary_operator = 
   | Add | Subtract | Multiply | Divide | Remainder
   | BitAnd | BitOr | Xor | ShiftLeft | ShiftRight
+  | Equal | NotEqual | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual
+  | And | Or
 
 type v =
   | Constant of int
@@ -16,6 +19,11 @@ type instruction =
   | Return of v
   | Unary of unary_operator * v * v
   | Binary of binary_operator * v * v * v
+  | Jump of string
+  | JumpIfZero of v * string
+  | JumpIfNotZero of v * string
+  | Label of string
+  | Copy of v * v
 
 type function_def =
   { name : string
@@ -28,6 +36,7 @@ type program =
 let pp_unop = function
   | Complement -> "Complement"
   | Negate -> "Negate"
+  | Not -> "Not"
 
 let pp_binop = function
   | Add -> "Add"
@@ -40,6 +49,14 @@ let pp_binop = function
   | Xor -> "Xor"
   | ShiftLeft -> "ShiftLeft"
   | ShiftRight -> "ShiftRight"
+  | Equal -> "Equal"
+  | NotEqual -> "NotEqual"
+  | LessThan -> "LessThan"
+  | LessOrEqual -> "LessOrEqual"
+  | GreaterThan -> "GreaterThan"
+  | GreaterOrEqual -> "GreaterOrEqual"
+  | And -> "And"
+  | Or -> "Or"
 
 let pp_val = function
   | Constant i -> sprintf "Constant(%d)" i
@@ -53,6 +70,16 @@ let pp_instruction = function
   | Binary (op, src1, src2, dst) ->
       sprintf "Binary(%s, %s, %s, %s)" 
         (pp_binop op) (pp_val src1) (pp_val src2) (pp_val dst)
+  | Jump target -> 
+      sprintf "Jump(%s)" target
+  | JumpIfZero (v, target) -> 
+      sprintf "JumpIfZero(%s, %s)" (pp_val v) target
+  | JumpIfNotZero (v, target) -> 
+      sprintf "JumpIfNotZero(%s, %s)" (pp_val v) target
+  | Label l -> 
+      sprintf "Label(%s)" l
+  | Copy (src, dst) -> 
+      sprintf "Copy(%s, %s)" (pp_val src) (pp_val dst)
 
 let pp_program (Program f) =
   let body_str = 
