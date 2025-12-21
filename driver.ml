@@ -107,26 +107,29 @@ let () =
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
       print_endline (Ast.pp_program ast)
-  | Codegen ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let _ = Codegen.gen_program ast in
-      ()
   | Tackygen ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
       let tacky = Tackygen.gen_program ast in
       print_endline (Tacky.pp_program tacky)
+  | Codegen ->
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let tacky = Tackygen.gen_program ast in
+      let _ = Codegen.gen_program tacky in
+      ()
   | Asm ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let asm_ast = Codegen.gen_program ast in
+      let tacky = Tackygen.gen_program ast in
+      let asm_ast = Codegen.gen_program tacky in
       let asm_text = Emit.emit_program asm_ast in
       write_file asm_file asm_text
   | Full ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let asm_ast = Codegen.gen_program ast in
+      let tacky = Tackygen.gen_program ast in
+      let asm_ast = Codegen.gen_program tacky in
       let asm_text = Emit.emit_program asm_ast in
       write_file asm_file asm_text;
       assemble_and_link asm_file output_file;

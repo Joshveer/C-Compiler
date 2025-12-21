@@ -1,9 +1,12 @@
-type register =
-  | EAX
+type reg =
+  | AX
+  | R10
 
 type operand =
   | Imm of int
-  | Reg of register
+  | Reg of reg
+  | Pseudo of string
+  | Stack of int
 
 type unary_op =
   | Neg
@@ -12,6 +15,7 @@ type unary_op =
 type instruction =
   | Mov of operand * operand
   | Unary of unary_op * operand
+  | AllocateStack of int
   | Ret
 
 type function_def =
