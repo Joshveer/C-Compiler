@@ -9,6 +9,11 @@ let convert_binop = function
   | Tacky.Add -> Asm.Add
   | Tacky.Subtract -> Asm.Sub
   | Tacky.Multiply -> Asm.Mult
+  | Tacky.BitAnd -> Asm.And
+  | Tacky.BitOr -> Asm.Or
+  | Tacky.Xor -> Asm.Xor
+  | Tacky.ShiftLeft -> Asm.Shl
+  | Tacky.ShiftRight -> Asm.Shr
   | _ -> failwith "Div/Rem handled separately"
 
 let convert_val = function
@@ -38,6 +43,18 @@ let convert_instruction = function
           let result_reg = if op = Tacky.Divide then Reg AX else Reg DX in
           let mov_res = Asm.Mov (result_reg, convert_val dst) in
           [ mov_eax; cdq ] @ setup_divisor @ [ idiv; mov_res ]
+      | Tacky.ShiftLeft | Tacky.ShiftRight ->
+          let asm_op = convert_binop op in
+          let dst_asm = convert_val dst in
+          let src1_asm = convert_val src1 in
+          let src2_asm = convert_val src2 in
+          let mov_src = Asm.Mov (src1_asm, dst_asm) in
+          (match src2_asm with
+           | Asm.Imm _ -> 
+               [ mov_src; Asm.Binary (asm_op, src2_asm, dst_asm) ]
+           | _ -> 
+               [ mov_src; Asm.Mov (src2_asm, Reg CX); Asm.Binary (asm_op, Reg CX, dst_asm) ]
+          )
       | _ ->
           let asm_op = convert_binop op in
           [
@@ -82,7 +99,6 @@ let replace_pseudos instrs =
     | Asm.Ret :: rest -> Asm.Ret :: replace_in_instrs rest
     | Asm.AllocateStack i :: rest ->
         Asm.AllocateStack i :: replace_in_instrs rest
-    | other :: rest -> other :: replace_in_instrs rest
   in
   (replace_in_instrs instrs, -(!offset))
 

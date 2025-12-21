@@ -4,7 +4,9 @@ type unary_operator =
   | Complement
   | Negate
 
-type binary_operator = Add | Subtract | Multiply | Divide | Remainder
+type binary_operator = 
+  | Add | Subtract | Multiply | Divide | Remainder
+  | BitAnd | BitOr | Xor | ShiftLeft | ShiftRight
 
 type v =
   | Constant of int
@@ -33,6 +35,11 @@ let pp_binop = function
   | Multiply -> "Multiply"
   | Divide -> "Divide"
   | Remainder -> "Remainder"
+  | BitAnd -> "BitAnd"
+  | BitOr -> "BitOr"
+  | Xor -> "Xor"
+  | ShiftLeft -> "ShiftLeft"
+  | ShiftRight -> "ShiftRight"
 
 let pp_val = function
   | Constant i -> sprintf "Constant(%d)" i
@@ -49,7 +56,9 @@ let pp_instruction = function
 
 let pp_program (Program f) =
   let body_str = 
-    List.map pp_instruction f.body 
-    |> String.concat "\n    " 
+    f.body 
+    |> List.map pp_instruction 
+    |> List.map (fun s -> "    " ^ s) 
+    |> String.concat "\n" 
   in
-  sprintf "Function %s:\n    %s\n" f.name body_str
+  sprintf "Function(\n  name=\"%s\",\n  body=\n%s\n)" f.name body_str

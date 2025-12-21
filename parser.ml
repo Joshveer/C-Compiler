@@ -1,6 +1,5 @@
 open Ast
 open Lexer
-open Printf
 
 exception ParseError of string
 
@@ -17,6 +16,10 @@ let parse_identifier tokens =
 let get_precedence = function
   | Star | Slash | Percent -> 50
   | Plus | Hyphen -> 45
+  | ShiftLeft | ShiftRight -> 40
+  | Ampersand -> 35
+  | Caret -> 30
+  | Pipe -> 25
   | _ -> -1
 
 let rec parse_factor tokens =
@@ -46,6 +49,11 @@ and parse_exp min_prec tokens =
           | Star -> Multiply
           | Slash -> Divide
           | Percent -> Remainder
+          | Ampersand -> BitAnd
+          | Pipe -> BitOr
+          | Caret -> Xor
+          | ShiftLeft -> ShiftLeft
+          | ShiftRight -> ShiftRight
           | _ -> failwith "Invalid binary operator"
         in
         let next_min_prec = get_precedence op_token + 1 in
@@ -74,8 +82,6 @@ let parse_function tokens =
   (Function (name, body), tokens)
 
 let parse tokens =
-  let func, tokens = parse_function tokens in
-  if tokens <> [] then
-    raise (ParseError "Extra tokens at end of file")
-  else
-    Program func
+  let (func_def, rest) = parse_function tokens in
+  if rest <> [] then raise (ParseError "Unexpected tokens after program") else
+  Program func_def

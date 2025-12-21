@@ -1,6 +1,7 @@
 type reg =
   | AX
   | DX
+  | CX
   | R10
   | R11
 
@@ -18,12 +19,16 @@ type binary_op =
   | Add
   | Sub
   | Mult
+  | And
+  | Or
+  | Xor
+  | Shl
+  | Shr
 
 type instruction =
   | Mov of operand * operand
   | Unary of unary_op * operand
   | Binary of binary_op * operand * operand
-  | Cmp of operand * operand 
   | Idiv of operand
   | Cdq
   | AllocateStack of int

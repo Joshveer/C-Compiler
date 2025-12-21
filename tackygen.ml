@@ -18,6 +18,11 @@ let convert_binop = function
   | Ast.Multiply -> Tacky.Multiply
   | Ast.Divide -> Tacky.Divide
   | Ast.Remainder -> Tacky.Remainder
+  | Ast.BitAnd -> Tacky.BitAnd
+  | Ast.BitOr -> Tacky.BitOr
+  | Ast.Xor -> Tacky.Xor
+  | Ast.ShiftLeft -> Tacky.ShiftLeft
+  | Ast.ShiftRight -> Tacky.ShiftRight
 
 let rec emit_tacky e instrs =
   match e with
@@ -39,15 +44,13 @@ let rec emit_tacky e instrs =
       instrs := !instrs @ [Tacky.Binary (tacky_op, v1, v2, dst)];
       dst
 
-let convert_statement (Ast.Return e) =
+let gen_function_def (Ast.Function (name, body)) =
   let instrs = ref [] in
-  let v = emit_tacky e instrs in
-  !instrs @ [Tacky.Return v]
-
-let convert_function (Ast.Function (name, body)) =
-  tmp_counter := 0;
-  let body_instrs = convert_statement body in
-  { Tacky.name = name; Tacky.body = body_instrs }
+  match body with
+  | Ast.Return e ->
+      let v = emit_tacky e instrs in
+      instrs := !instrs @ [Tacky.Return v];
+      { Tacky.name = name; body = !instrs }
 
 let gen_program (Ast.Program f) =
-  Tacky.Program (convert_function f)
+  Tacky.Program (gen_function_def f)

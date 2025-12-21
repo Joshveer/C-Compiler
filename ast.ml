@@ -10,6 +10,11 @@ type binary_op =
   | Multiply 
   | Divide 
   | Remainder
+  | BitAnd 
+  | BitOr 
+  | Xor 
+  | ShiftLeft 
+  | ShiftRight
 
 type identifier = string
 
@@ -33,6 +38,11 @@ let pp_binop = function
   | Multiply -> "Multiply"
   | Divide -> "Divide"
   | Remainder -> "Remainder"
+  | BitAnd -> "BitAnd"
+  | BitOr -> "BitOr"
+  | Xor -> "Xor"
+  | ShiftLeft -> "ShiftLeft"
+  | ShiftRight -> "ShiftRight"
 
 let rec pp_exp = function
   | Constant i -> sprintf "Constant(%d)" i
@@ -48,5 +58,5 @@ let pp_statement = function
 let pp_function_def (Function (name, body)) =
   sprintf "Function(\n  name=\"%s\",\n  body=%s\n)" name (pp_statement body)
 
-let pp_program (Program f) =
-  sprintf "Program(\n  %s\n)\n" (pp_function_def f)
+let pp_program (Program f) = 
+  sprintf "Program(%s)" (pp_function_def f)

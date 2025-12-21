@@ -1,3 +1,5 @@
+open Printf
+
 type token =
   | IntKw
   | VoidKw
@@ -16,6 +18,11 @@ type token =
   | Star
   | Slash
   | Percent
+  | Ampersand
+  | Pipe
+  | Caret
+  | ShiftLeft
+  | ShiftRight
 
 let is_whitespace = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -66,12 +73,24 @@ let lex (input : string) : token list =
       | '*' -> lex_at (i + 1) (Star :: acc)
       | '/' -> lex_at (i + 1) (Slash :: acc)
       | '%' -> lex_at (i + 1) (Percent :: acc)
+      | '&' -> lex_at (i + 1) (Ampersand :: acc)
+      | '|' -> lex_at (i + 1) (Pipe :: acc)
+      | '^' -> lex_at (i + 1) (Caret :: acc)
+      | '<' -> 
+          if i + 1 < len && input.[i + 1] = '<' then
+            lex_at (i + 2) (ShiftLeft :: acc)
+          else
+            raise (LexError "Unknown token '<'")
+      | '>' -> 
+          if i + 1 < len && input.[i + 1] = '>' then
+            lex_at (i + 2) (ShiftRight :: acc)
+          else
+            raise (LexError "Unknown token '>'")
       | '-' ->
           if i + 1 < len && input.[i + 1] = '-' then
             lex_at (i + 2) (Decrement :: acc)
           else
             lex_at (i + 1) (Hyphen :: acc)
-
       | c when is_letter c ->
           let j = ref (i + 1) in
           while !j < len && is_word_char input.[!j] do
@@ -84,21 +103,13 @@ let lex (input : string) : token list =
             | None -> Ident name
           in
           lex_at !j (tok :: acc)
-
       | c when is_digit c ->
           let j = ref (i + 1) in
           while !j < len && is_digit input.[!j] do
             incr j
           done;
-          if !j < len && is_letter input.[!j] then
-            raise (LexError ("invalid integer literal"))
-          else
-            let value =
-              int_of_string (String.sub input i (!j - i))
-            in
-            lex_at !j (IntConst value :: acc)
-
-      | _ ->
-          raise (LexError ("unexpected character"))
+          let num_str = String.sub input i (!j - i) in
+          lex_at !j (IntConst (int_of_string num_str) :: acc)
+      | _ -> raise (LexError (sprintf "Unknown character at %d" i))
   in
   lex_at 0 []
