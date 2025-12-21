@@ -10,9 +10,15 @@ let emit_operand = function
   | Imm n -> sprintf "$%d" n
   | Reg r -> emit_register r
 
+let emit_unary_op = function
+  | Neg -> "neg"
+  | Not -> "not"
+
 let emit_instruction = function
   | Mov (src, dst) ->
       sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
+  | Unary (op, dst) ->
+      sprintf "    %s %s\n" (emit_unary_op op) (emit_operand dst)
   | Ret ->
       "    ret\n"
 

@@ -1,19 +1,23 @@
-(* codegen.ml *)
 open Ast
 open Asm
 
-let gen_exp = function
-  | Ast.Constant n -> Asm.Imm n
+let rec gen_exp = function
+  | Ast.Constant n ->
+      [ Mov (Imm n, Reg EAX) ]
+  | Ast.Unary (op, e) ->
+      let instrs = gen_exp e in
+      let asm_op = match op with
+        | Ast.Complement -> Asm.Not
+        | Ast.Negate -> Asm.Neg
+      in
+      instrs @ [ Unary (asm_op, Reg EAX) ]
 
 let gen_statement = function
   | Ast.Return e ->
-      let op = gen_exp e in
-      [ Asm.Mov (op, Asm.Reg Asm.EAX); Asm.Ret ]
+      gen_exp e @ [ Ret ]
 
 let gen_function (Ast.Function (name, body)) =
-  (* Create the Asm record, not the Ast constructor *)
   { Asm.name = name; Asm.instructions = gen_statement body }
 
-(* Explicitly specify we are matching Ast.Program and creating Asm.Program *)
 let gen_program (Ast.Program f) =
   Asm.Program (gen_function f)

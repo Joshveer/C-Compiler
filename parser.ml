@@ -14,10 +14,25 @@ let parse_identifier tokens =
   | Ident name :: rest -> (name, rest)
   | _ -> raise (ParseError "Expected identifier")
 
-let parse_exp tokens =
+let rec parse_exp tokens =
   match tokens with
-  | IntConst i :: rest -> (Constant i, rest)
-  | _ -> raise (ParseError "Expected integer constant")
+  | IntConst i :: rest -> 
+      (Constant i, rest)
+      
+  | Tilde :: rest ->
+      let (inner_exp, rest) = parse_exp rest in
+      (Unary (Complement, inner_exp), rest)
+      
+  | Hyphen :: rest ->
+      let (inner_exp, rest) = parse_exp rest in
+      (Unary (Negate, inner_exp), rest)
+      
+  | LParen :: rest ->
+      let (inner_exp, rest) = parse_exp rest in
+      let rest = expect RParen rest in
+      (inner_exp, rest)
+      
+  | _ -> raise (ParseError "Expected expression")
 
 let parse_statement tokens =
   let tokens = expect ReturnKw tokens in

@@ -2,6 +2,10 @@
 (*ocamlc -o mycc ast.ml asm.ml lexer.ml parser.ml codegen.ml emit.ml driver.ml*)
 
 open Printf
+open Lexer
+open Parser
+open Codegen
+open Emit
 
 let fail msg =
   eprintf "error: %s\n" msg;

@@ -1,9 +1,14 @@
 open Printf
 
+type unary_op = 
+  | Complement 
+  | Negate
+
 type identifier = string
 
 type exp = 
   | Constant of int
+  | Unary of unary_op * exp
 
 type statement = 
   | Return of exp
@@ -16,6 +21,9 @@ type program =
 
 let rec pp_exp = function
   | Constant i -> sprintf "Constant(%d)" i
+  | Unary (op, e) -> 
+      let op_str = match op with Complement -> "Complement" | Negate -> "Negate" in
+      sprintf "Unary(%s, %s)" op_str (pp_exp e)
 
 let pp_statement = function
   | Return e -> sprintf "Return(\n    %s\n  )" (pp_exp e)
