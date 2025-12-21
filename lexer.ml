@@ -23,6 +23,15 @@ type token =
   | Caret
   | ShiftLeft
   | ShiftRight
+  | Bang
+  | And
+  | Or
+  | Equal
+  | NotEqual
+  | LessThan
+  | GreaterThan
+  | LessOrEqual
+  | GreaterOrEqual
 
 let is_whitespace = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -73,19 +82,43 @@ let lex (input : string) : token list =
       | '*' -> lex_at (i + 1) (Star :: acc)
       | '/' -> lex_at (i + 1) (Slash :: acc)
       | '%' -> lex_at (i + 1) (Percent :: acc)
-      | '&' -> lex_at (i + 1) (Ampersand :: acc)
-      | '|' -> lex_at (i + 1) (Pipe :: acc)
       | '^' -> lex_at (i + 1) (Caret :: acc)
-      | '<' -> 
-          if i + 1 < len && input.[i + 1] = '<' then
-            lex_at (i + 2) (ShiftLeft :: acc)
+      | '!' ->
+          if i + 1 < len && input.[i + 1] = '=' then
+            lex_at (i + 2) (NotEqual :: acc)
           else
-            raise (LexError "Unknown token '<'")
-      | '>' -> 
-          if i + 1 < len && input.[i + 1] = '>' then
-            lex_at (i + 2) (ShiftRight :: acc)
+            lex_at (i + 1) (Bang :: acc)
+      | '=' ->
+          if i + 1 < len && input.[i + 1] = '=' then
+            lex_at (i + 2) (Equal :: acc)
           else
-            raise (LexError "Unknown token '>'")
+            raise (LexError "Unknown token '='")
+      | '&' ->
+          if i + 1 < len && input.[i + 1] = '&' then
+            lex_at (i + 2) (And :: acc)
+          else
+            lex_at (i + 1) (Ampersand :: acc)
+      | '|' ->
+          if i + 1 < len && input.[i + 1] = '|' then
+            lex_at (i + 2) (Or :: acc)
+          else
+            lex_at (i + 1) (Pipe :: acc)
+      | '<' ->
+          if i + 1 < len then
+            match input.[i + 1] with
+            | '<' -> lex_at (i + 2) (ShiftLeft :: acc)
+            | '=' -> lex_at (i + 2) (LessOrEqual :: acc)
+            | _ -> lex_at (i + 1) (LessThan :: acc)
+          else
+            lex_at (i + 1) (LessThan :: acc)
+      | '>' ->
+          if i + 1 < len then
+            match input.[i + 1] with
+            | '>' -> lex_at (i + 2) (ShiftRight :: acc)
+            | '=' -> lex_at (i + 2) (GreaterOrEqual :: acc)
+            | _ -> lex_at (i + 1) (GreaterThan :: acc)
+          else
+            lex_at (i + 1) (GreaterThan :: acc)
       | '-' ->
           if i + 1 < len && input.[i + 1] = '-' then
             lex_at (i + 2) (Decrement :: acc)
@@ -108,8 +141,11 @@ let lex (input : string) : token list =
           while !j < len && is_digit input.[!j] do
             incr j
           done;
-          let num_str = String.sub input i (!j - i) in
-          lex_at !j (IntConst (int_of_string num_str) :: acc)
+          if !j < len && is_letter input.[!j] then
+             raise (LexError (sprintf "Invalid identifier starting with digit at %d" i))
+          else
+             let num_str = String.sub input i (!j - i) in
+             lex_at !j (IntConst (int_of_string num_str) :: acc)
       | _ -> raise (LexError (sprintf "Unknown character at %d" i))
   in
   lex_at 0 []
