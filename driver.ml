@@ -1,9 +1,10 @@
 (*arch -x86_64 zsh*)
-(*ocamlc -o mycc ast.ml asm.ml lexer.ml parser.ml tacky.ml tackygen.ml codegen.ml emit.ml driver.ml*)
+(*ocamlc -o mycc semanticanalysis.ml ast.ml asm.ml lexer.ml parser.ml tacky.ml tackygen.ml codegen.ml emit.ml driver.ml*)
 
 open Printf
 open Lexer
 open Parser
+open Semanticanalysis
 open Codegen
 open Emit
 
@@ -34,6 +35,7 @@ let write_file path contents =
 type stage =
   | Lex
   | Parse
+  | Validate
   | Codegen
   | Asm
   | Full
@@ -49,44 +51,26 @@ let assemble_and_link asm_file output_file =
 
 let parse_args () =
   let stage = ref Full in
-  let input_file = ref None in
-
-  let set_stage s =
-    match !stage with
-    | Full -> stage := s
-    | _ -> fail "multiple stage options are not allowed"
+  let input_file = ref "" in
+  let usage_msg = "Usage: ./mycc [options] <input_file>" in
+  let set_stage s = Arg.Unit (fun () -> stage := s) in
+  let speclist =
+    [ ("--lex", set_stage Lex, "Run lexer only")
+    ; ("--parse", set_stage Parse, "Run parser only")
+    ; ("--validate", set_stage Validate, "Run semantic analysis only")
+    ; ("--tacky", set_stage Tackygen, "Run Tacky generation only")
+    ; ("--codegen", set_stage Codegen, "Run code generation only")
+    ]
   in
-
-  let rec loop i =
-    if i >= Array.length Sys.argv then ()
-    else
-      match Sys.argv.(i) with
-      | "--lex" -> set_stage Lex; loop (i + 1)
-      | "--parse" -> set_stage Parse; loop (i + 1)
-      | "--codegen" -> set_stage Codegen; loop (i + 1)
-      | "--tacky" -> set_stage Tackygen; loop (i + 1)
-      | "-S" -> set_stage Asm; loop (i + 1)
-      | arg when String.length arg > 0 && arg.[0] = '-' ->
-          fail ("unknown option: " ^ arg)
-      | file ->
-          if !input_file <> None then
-            fail "only one input file allowed"
-          else (
-            input_file := Some file;
-            loop (i + 1)
-          )
-  in
-  loop 1;
-  match !input_file with
-  | None -> fail "no input file provided"
-  | Some file -> (!stage, file)
+  Arg.parse speclist (fun filename -> input_file := filename) usage_msg;
+  if !input_file = "" then (
+    Arg.usage speclist usage_msg;
+    exit 1
+  );
+  (!stage, !input_file)
 
 let () =
   let stage, input_file = parse_args () in
-
-  if not (Filename.check_suffix input_file ".c") then
-    fail "input file must have a .c extension";
-
   let base = Filename.remove_extension input_file in
   let preprocessed = base ^ ".i" in
   let asm_file = base ^ ".s" in
@@ -107,30 +91,38 @@ let () =
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
       print_endline (Ast.pp_program ast)
+  | Validate ->
+      let tokens = Lexer.lex source in
+      let ast = Parser.parse tokens in
+      let _ = Semanticanalysis.resolve_program ast in
+      ()
   | Tackygen ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let tacky = Tackygen.gen_program ast in
+      let resolved_ast = Semanticanalysis.resolve_program ast in
+      let tacky = Tackygen.gen_program resolved_ast in
       print_endline (Tacky.pp_program tacky)
   | Codegen ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let tacky = Tackygen.gen_program ast in
+      let resolved_ast = Semanticanalysis.resolve_program ast in
+      let tacky = Tackygen.gen_program resolved_ast in
       let _ = Codegen.gen_program tacky in
       ()
   | Asm ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let tacky = Tackygen.gen_program ast in
+      let resolved_ast = Semanticanalysis.resolve_program ast in
+      let tacky = Tackygen.gen_program resolved_ast in
       let asm_ast = Codegen.gen_program tacky in
       let asm_text = Emit.emit_program asm_ast in
       write_file asm_file asm_text
   | Full ->
       let tokens = Lexer.lex source in
       let ast = Parser.parse tokens in
-      let tacky = Tackygen.gen_program ast in
+      let resolved_ast = Semanticanalysis.resolve_program ast in
+      let tacky = Tackygen.gen_program resolved_ast in
       let asm_ast = Codegen.gen_program tacky in
       let asm_text = Emit.emit_program asm_ast in
       write_file asm_file asm_text;
-      assemble_and_link asm_file output_file;
-      remove_if_exists asm_file
+      assemble_and_link asm_file output_file
