@@ -174,19 +174,62 @@ let rec emit_tacky e instrs =
             old_val
         | _ -> failwith "Internal Error: Lvalue must be a variable"
       end
+  | Ast.Conditional (cond, e1, e2) ->
+      let e2_lbl = make_label () in
+      let end_lbl = make_label () in
+      let dst_name = make_temporary () in
+      let dst = Tacky.Var dst_name in
+      
+      let c = emit_tacky cond instrs in
+      instrs := !instrs @ [Tacky.JumpIfZero (c, e2_lbl)];
+      
+      let v1 = emit_tacky e1 instrs in
+      instrs := !instrs @ [Tacky.Copy (v1, dst); Tacky.Jump end_lbl];
+      
+      instrs := !instrs @ [Tacky.Label e2_lbl];
+      let v2 = emit_tacky e2 instrs in
+      instrs := !instrs @ [Tacky.Copy (v2, dst)];
+      
+      instrs := !instrs @ [Tacky.Label end_lbl];
+      dst
+
+let rec emit_statement stmt instrs =
+  match stmt with
+  | Ast.Return e ->
+      let v = emit_tacky e instrs in
+      instrs := !instrs @ [Tacky.Return v]
+  | Ast.Expression e ->
+      let _ = emit_tacky e instrs in
+      ()
+  | Ast.If (cond, then_stmt, else_stmt_opt) ->
+      let else_lbl = make_label () in
+      let end_lbl = make_label () in
+      let c = emit_tacky cond instrs in
+      instrs := !instrs @ [Tacky.JumpIfZero (c, else_lbl)];
+      
+      emit_statement then_stmt instrs;
+      
+      begin
+        match else_stmt_opt with
+        | Some else_stmt ->
+            instrs := !instrs @ [Tacky.Jump end_lbl; Tacky.Label else_lbl];
+            emit_statement else_stmt instrs;
+            instrs := !instrs @ [Tacky.Label end_lbl]
+        | None ->
+            instrs := !instrs @ [Tacky.Label else_lbl]
+      end
+  | Ast.Goto target ->
+      instrs := !instrs @ [Tacky.Jump target]
+  | Ast.Label (label, inner) ->
+      instrs := !instrs @ [Tacky.Label label];
+      emit_statement inner instrs
+  | Ast.Null -> ()
 
 let gen_function (Ast.Function (name, body)) =
   let instrs = ref [] in
-  let rec process_item item =
+  let process_item item =
     match item with
-    | Ast.S (Ast.Return e) ->
-        let v = emit_tacky e instrs in
-        instrs := !instrs @ [Tacky.Return v]
-    | Ast.S (Ast.Expression e) ->
-        let _ = emit_tacky e instrs in
-        ()
-    | Ast.S Ast.Null ->
-        ()
+    | Ast.S stmt -> emit_statement stmt instrs
     | Ast.D (Ast.Declaration (name, Some init)) ->
         let v = emit_tacky init instrs in
         instrs := !instrs @ [Tacky.Copy (v, Tacky.Var name)]

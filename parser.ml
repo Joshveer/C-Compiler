@@ -25,6 +25,7 @@ let get_precedence = function
   | Pipe -> 15
   | And -> 10
   | Or -> 5
+  | Question -> 3
   | Assign | PlusAssign | MinusAssign | MultAssign | DivAssign
   | ModAssign | AndAssign | OrAssign | XorAssign
   | LeftShiftAssign | RightShiftAssign -> 1
@@ -77,56 +78,73 @@ and parse_exp min_prec tokens =
         let op_prec = get_precedence op_token in
         if op_prec < min_prec then (left, tokens)
         else
-          let handle_assignment constr =
-            let (right, rest) = parse_exp op_prec rest_tokens in
-            let new_left = constr (left, right) in
-            loop new_left rest
-          in
-          let handle_compound_assignment bin_op =
-             let (right, rest) = parse_exp op_prec rest_tokens in
-             let new_left = CompoundAssignment (bin_op, left, right) in
-             loop new_left rest
-          in
           begin
             match op_token with
-            | Assign -> handle_assignment (fun (l, r) -> Assignment (l, r))
-            | PlusAssign -> handle_compound_assignment Add
-            | MinusAssign -> handle_compound_assignment Subtract
-            | MultAssign -> handle_compound_assignment Multiply
-            | DivAssign -> handle_compound_assignment Divide
-            | ModAssign -> handle_compound_assignment Remainder
-            | AndAssign -> handle_compound_assignment BitAnd
-            | OrAssign -> handle_compound_assignment BitOr
-            | XorAssign -> handle_compound_assignment Xor
-            | LeftShiftAssign -> handle_compound_assignment ShiftLeft
-            | RightShiftAssign -> handle_compound_assignment ShiftRight
+            | Assign -> 
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (Assignment (left, right)) rest
+            | Question ->
+                let (middle, rest) = parse_exp 0 rest_tokens in
+                let rest = expect Colon rest in
+                let (right, rest) = parse_exp op_prec rest in
+                loop (Conditional (left, middle, right)) rest
+            | PlusAssign -> 
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Add, left, right)) rest
+            | MinusAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Subtract, left, right)) rest
+            | MultAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Multiply, left, right)) rest
+            | DivAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Divide, left, right)) rest
+            | ModAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Remainder, left, right)) rest
+            | AndAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (BitAnd, left, right)) rest
+            | OrAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (BitOr, left, right)) rest
+            | XorAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (Xor, left, right)) rest
+            | LeftShiftAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (ShiftLeft, left, right)) rest
+            | RightShiftAssign ->
+                let (right, rest) = parse_exp op_prec rest_tokens in
+                loop (CompoundAssignment (ShiftRight, left, right)) rest
             | _ ->
-              let op =
-                match op_token with
-                | Plus -> Add
-                | Hyphen -> Subtract
-                | Star -> Multiply
-                | Slash -> Divide
-                | Percent -> Remainder
-                | Ampersand -> BitAnd
-                | Pipe -> BitOr
-                | Caret -> Xor
-                | ShiftLeft -> ShiftLeft
-                | ShiftRight -> ShiftRight
-                | And -> And
-                | Or -> Or
-                | Equal -> Equal
-                | NotEqual -> NotEqual
-                | LessThan -> LessThan
-                | LessOrEqual -> LessOrEqual
-                | GreaterThan -> GreaterThan
-                | GreaterOrEqual -> GreaterOrEqual
-                | _ -> failwith "Invalid binary operator"
-              in
-              let next_min_prec = op_prec + 1 in
-              let (right, rest) = parse_exp next_min_prec rest_tokens in
-              let new_left = Binary (op, left, right) in
-              loop new_left rest
+                let op =
+                  match op_token with
+                  | Plus -> Add
+                  | Hyphen -> Subtract
+                  | Star -> Multiply
+                  | Slash -> Divide
+                  | Percent -> Remainder
+                  | Ampersand -> BitAnd
+                  | Pipe -> BitOr
+                  | Caret -> Xor
+                  | ShiftLeft -> ShiftLeft
+                  | ShiftRight -> ShiftRight
+                  | And -> And
+                  | Or -> Or
+                  | Equal -> Equal
+                  | NotEqual -> NotEqual
+                  | LessThan -> LessThan
+                  | LessOrEqual -> LessOrEqual
+                  | GreaterThan -> GreaterThan
+                  | GreaterOrEqual -> GreaterOrEqual
+                  | _ -> failwith "Invalid binary operator"
+                in
+                let next_min_prec = op_prec + 1 in
+                let (right, rest) = parse_exp next_min_prec rest_tokens in
+                let new_left = Binary (op, left, right) in
+                loop new_left rest
           end
     | [] -> (left, tokens)
   in
@@ -144,12 +162,31 @@ let parse_declaration tokens =
       (Declaration (name, Some init), tokens)
   | _ -> raise (ParseError "Expected ; or = in declaration")
 
-let parse_statement tokens =
+let rec parse_statement tokens =
   match tokens with
   | ReturnKw :: rest ->
       let exp, tokens = parse_exp 0 rest in
       let tokens = expect Semicolon tokens in
       (Return exp, tokens)
+  | IfKw :: rest ->
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let then_stmt, rest = parse_statement rest in
+      begin
+        match rest with
+        | ElseKw :: rest ->
+            let else_stmt, rest = parse_statement rest in
+            (If (cond, then_stmt, Some else_stmt), rest)
+        | _ -> (If (cond, then_stmt, None), rest)
+      end
+  | GotoKw :: rest ->
+      let label, rest = parse_identifier rest in
+      let rest = expect Semicolon rest in
+      (Goto label, rest)
+  | Ident name :: Colon :: rest ->
+      let stmt, rest = parse_statement rest in
+      (Label (name, stmt), rest)
   | Semicolon :: rest ->
       (Null, rest)
   | _ ->

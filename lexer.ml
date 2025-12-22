@@ -4,6 +4,9 @@ type token =
   | IntKw
   | VoidKw
   | ReturnKw
+  | IfKw
+  | ElseKw
+  | GotoKw
   | Ident of string
   | IntConst of int
   | LParen
@@ -44,6 +47,8 @@ type token =
   | XorAssign
   | LeftShiftAssign
   | RightShiftAssign
+  | Question
+  | Colon
 
 let is_whitespace = function
   | ' ' | '\t' | '\n' | '\r' -> true
@@ -64,6 +69,9 @@ let keyword_of_ident = function
   | "int" -> Some IntKw
   | "void" -> Some VoidKw
   | "return" -> Some ReturnKw
+  | "if" -> Some IfKw
+  | "else" -> Some ElseKw
+  | "goto" -> Some GotoKw
   | _ -> None
 
 exception LexError of string
@@ -90,6 +98,8 @@ let lex (input : string) : token list =
       | '{' -> lex_at (i + 1) (LBrace :: acc)
       | '}' -> lex_at (i + 1) (RBrace :: acc)
       | ';' -> lex_at (i + 1) (Semicolon :: acc)
+      | ':' -> lex_at (i + 1) (Colon :: acc)
+      | '?' -> lex_at (i + 1) (Question :: acc)
       | '~' -> lex_at (i + 1) (Tilde :: acc)
       | '*' -> 
           if i + 1 < len && input.[i + 1] = '=' then

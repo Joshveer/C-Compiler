@@ -1,5 +1,5 @@
 (*arch -x86_64 zsh*)
-(*ocamlc -o mycc semanticanalysis.ml ast.ml asm.ml lexer.ml parser.ml tacky.ml tackygen.ml codegen.ml emit.ml driver.ml*)
+(*ocamlc -o mycc ast.ml asm.ml tacky.ml lexer.ml parser.ml semanticanalysis.ml tackygen.ml codegen.ml emit.ml driver.ml*)
 
 open Printf
 open Lexer

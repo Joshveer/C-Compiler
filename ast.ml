@@ -38,12 +38,16 @@ type exp =
   | PostfixIncrement of exp
   | PrefixDecrement of exp
   | PostfixDecrement of exp
+  | Conditional of exp * exp * exp
 
 type declaration = Declaration of identifier * exp option
 
 type statement =
   | Return of exp
   | Expression of exp
+  | If of exp * statement * statement option
+  | Goto of identifier
+  | Label of identifier * statement
   | Null
 
 type block_item =
@@ -96,14 +100,22 @@ let rec pp_exp = function
   | PostfixIncrement e -> sprintf "PostfixIncrement(%s)" (pp_exp e)
   | PrefixDecrement e -> sprintf "PrefixDecrement(%s)" (pp_exp e)
   | PostfixDecrement e -> sprintf "PostfixDecrement(%s)" (pp_exp e)
+  | Conditional (e1, e2, e3) ->
+      sprintf "Conditional(%s, %s, %s)" (pp_exp e1) (pp_exp e2) (pp_exp e3)
 
 let pp_declaration = function
   | Declaration (id, None) -> sprintf "Declaration(%s)" id
   | Declaration (id, Some e) -> sprintf "Declaration(%s, %s)" id (pp_exp e)
 
-let pp_statement = function
+let rec pp_statement = function
   | Return e -> sprintf "Return(%s)" (pp_exp e)
   | Expression e -> sprintf "Expression(%s)" (pp_exp e)
+  | If (cond, then_s, Some else_s) ->
+      sprintf "If(%s, %s, %s)" (pp_exp cond) (pp_statement then_s) (pp_statement else_s)
+  | If (cond, then_s, None) ->
+      sprintf "If(%s, %s, Null)" (pp_exp cond) (pp_statement then_s)
+  | Goto label -> sprintf "Goto(%s)" label
+  | Label (label, s) -> sprintf "Label(%s, %s)" label (pp_statement s)
   | Null -> "Null"
 
 let pp_block_item = function
