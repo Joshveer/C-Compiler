@@ -223,6 +223,15 @@ let rec emit_statement stmt instrs =
   | Ast.Label (label, inner) ->
       instrs := !instrs @ [Tacky.Label label];
       emit_statement inner instrs
+  | Ast.Compound (Block items) ->
+      let process_item = function
+        | Ast.S stmt -> emit_statement stmt instrs
+        | Ast.D (Ast.Declaration (name, Some init)) ->
+            let v = emit_tacky init instrs in
+            instrs := !instrs @ [Tacky.Copy (v, Tacky.Var name)]
+        | Ast.D (Ast.Declaration (_, None)) -> ()
+      in
+      List.iter process_item items
   | Ast.Null -> ()
 
 let gen_function (Ast.Function (name, body)) =

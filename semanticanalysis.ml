@@ -21,6 +21,11 @@ let make_unique_label name =
 let fail msg =
   raise (SemanticError msg)
 
+type map_entry = {
+  unique_name : string;
+  from_current_block : bool;
+}
+
 let check_lvalue e =
   match e with
   | Var _ -> ()
@@ -31,7 +36,7 @@ let rec resolve_exp exp map =
   | Constant _ -> exp
   | Var name ->
       (match StringMap.find_opt name map with
-       | Some unique_name -> Var unique_name
+       | Some entry -> Var entry.unique_name
        | None -> fail (sprintf "Undeclared variable: %s" name))
   | Unary (op, e) ->
       Unary (op, resolve_exp e map)
@@ -68,18 +73,32 @@ let rec resolve_exp exp map =
 let resolve_declaration decl map =
   match decl with
   | Declaration (name, init_opt) ->
-      if StringMap.mem name map then
-        fail (sprintf "Duplicate variable declaration: %s" name);
+      (match StringMap.find_opt name map with
+       | Some entry when entry.from_current_block ->
+           fail (sprintf "Duplicate variable declaration: %s" name)
+       | _ -> ());
       let unique_name = make_unique_name name in
-      let new_map = StringMap.add name unique_name map in
+      let new_entry = { unique_name; from_current_block = true } in
+      let new_map = StringMap.add name new_entry map in
       let resolved_init =
         match init_opt with
-        | Some init -> Some (resolve_exp init new_map)
+        | Some init -> Some (resolve_exp init new_map) (* C scope: variable in scope during init *)
         | None -> None
       in
       (Declaration (unique_name, resolved_init), new_map)
 
-let rec resolve_statement stmt map =
+let copy_variable_map map =
+  StringMap.map (fun entry -> { entry with from_current_block = false }) map
+
+let rec resolve_block_item item map =
+  match item with
+  | D decl ->
+      let (resolved_decl, new_map) = resolve_declaration decl map in
+      (D resolved_decl, new_map)
+  | S stmt ->
+      (S (resolve_statement stmt map), map)
+
+and resolve_statement stmt map =
   match stmt with
   | Return e -> Return (resolve_exp e map)
   | Expression e -> Expression (resolve_exp e map)
@@ -95,16 +114,20 @@ let rec resolve_statement stmt map =
       If (cond, then_s, else_s_opt)
   | Goto _ -> stmt
   | Label (name, inner) ->
-      Label (name, resolve_statement inner map) (* Recursively resolve inner statement *)
+      Label (name, resolve_statement inner map)
+  | Compound (Block items) ->
+      let new_map = copy_variable_map map in
+      let rec resolve_items items map acc =
+        match items with
+        | [] -> List.rev acc
+        | item :: rest ->
+            let (resolved_item, new_map) = resolve_block_item item map in
+            resolve_items rest new_map (resolved_item :: acc)
+      in
+      let resolved_items = resolve_items items new_map [] in
+      Compound (Block resolved_items)
 
-let resolve_block_item item map =
-  match item with
-  | D decl ->
-      let (resolved_decl, new_map) = resolve_declaration decl map in
-      (D resolved_decl, new_map)
-  | S stmt ->
-      (S (resolve_statement stmt map), map)
-
+(* Label Resolution Logic *)
 let rec collect_labels_in_stmt stmt map =
   match stmt with
   | Label (name, inner) ->
@@ -117,9 +140,11 @@ let rec collect_labels_in_stmt stmt map =
       (match else_s_opt with
        | Some s -> collect_labels_in_stmt s map
        | None -> map)
+  | Compound (Block items) ->
+      collect_labels_in_block items map
   | _ -> map
 
-let rec collect_labels_in_block items map =
+and collect_labels_in_block items map =
   match items with
   | [] -> map
   | S stmt :: rest ->
@@ -142,9 +167,11 @@ let rec resolve_labels_in_stmt stmt map =
         | None -> None
       in
       If (cond, then_s, else_s_opt)
+  | Compound (Block items) ->
+      Compound (Block (resolve_labels_in_block items map))
   | _ -> stmt
 
-let rec resolve_labels_in_block items map =
+and resolve_labels_in_block items map =
   match items with
   | [] -> []
   | S stmt :: rest ->

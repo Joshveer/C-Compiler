@@ -162,7 +162,28 @@ let parse_declaration tokens =
       (Declaration (name, Some init), tokens)
   | _ -> raise (ParseError "Expected ; or = in declaration")
 
-let rec parse_statement tokens =
+let rec parse_block_item tokens =
+  match tokens with
+  | IntKw :: _ ->
+      let decl, tokens = parse_declaration tokens in
+      (D decl, tokens)
+  | _ ->
+      let stmt, tokens = parse_statement tokens in
+      (S stmt, tokens)
+
+and parse_block tokens =
+  let tokens = expect LBrace tokens in
+  let rec parse_items acc tokens =
+    match tokens with
+    | RBrace :: rest -> (List.rev acc, rest)
+    | _ ->
+        let item, rest = parse_block_item tokens in
+        parse_items (item :: acc) rest
+  in
+  let items, tokens = parse_items [] tokens in
+  (Block items, tokens)
+
+and parse_statement tokens =
   match tokens with
   | ReturnKw :: rest ->
       let exp, tokens = parse_exp 0 rest in
@@ -187,6 +208,9 @@ let rec parse_statement tokens =
   | Ident name :: Colon :: rest ->
       let stmt, rest = parse_statement rest in
       (Label (name, stmt), rest)
+  | LBrace :: _ ->
+      let block, rest = parse_block tokens in
+      (Compound block, rest)
   | Semicolon :: rest ->
       (Null, rest)
   | _ ->
@@ -194,32 +218,18 @@ let rec parse_statement tokens =
       let tokens = expect Semicolon tokens in
       (Expression exp, tokens)
 
-let parse_block_item tokens =
-  match tokens with
-  | IntKw :: _ ->
-      let decl, tokens = parse_declaration tokens in
-      (D decl, tokens)
-  | _ ->
-      let stmt, tokens = parse_statement tokens in
-      (S stmt, tokens)
-
 let parse_function tokens =
   let tokens = expect IntKw tokens in
   let name, tokens = parse_identifier tokens in
   let tokens = expect LParen tokens in
   let tokens = expect VoidKw tokens in
   let tokens = expect RParen tokens in
-  let tokens = expect LBrace tokens in
   
-  let rec parse_items acc tokens =
-    match tokens with
-    | RBrace :: rest -> (List.rev acc, rest)
-    | _ ->
-        let item, rest = parse_block_item tokens in
-        parse_items (item :: acc) rest
-  in
-  let body, tokens = parse_items [] tokens in
-  (Function (name, body), tokens)
+  match tokens with
+  | LBrace :: _ ->
+      let Block body, tokens = parse_block tokens in
+      (Function (name, body), tokens)
+  | _ -> raise (ParseError "Expected function body")
 
 let parse tokens =
   let (func_def, rest) = parse_function tokens in

@@ -46,13 +46,16 @@ type statement =
   | Return of exp
   | Expression of exp
   | If of exp * statement * statement option
+  | Compound of block
   | Goto of identifier
   | Label of identifier * statement
   | Null
 
-type block_item =
+and block_item =
   | S of statement
   | D of declaration
+
+and block = Block of block_item list
 
 type function_def =
   | Function of identifier * block_item list
@@ -114,11 +117,14 @@ let rec pp_statement = function
       sprintf "If(%s, %s, %s)" (pp_exp cond) (pp_statement then_s) (pp_statement else_s)
   | If (cond, then_s, None) ->
       sprintf "If(%s, %s, Null)" (pp_exp cond) (pp_statement then_s)
+  | Compound (Block items) ->
+      let items_str = List.map pp_block_item items |> String.concat ", " in
+      sprintf "Compound([%s])" items_str
   | Goto label -> sprintf "Goto(%s)" label
   | Label (label, s) -> sprintf "Label(%s, %s)" label (pp_statement s)
   | Null -> "Null"
 
-let pp_block_item = function
+and pp_block_item = function
   | S s -> pp_statement s
   | D d -> pp_declaration d
 
