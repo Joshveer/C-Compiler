@@ -67,7 +67,11 @@ let rec emit_statement stmt instrs =
        | Some s -> let else_lbl = make_label () in instrs := !instrs @ [ Tacky.JumpIfZero (v, else_lbl) ]; emit_statement then_s instrs; instrs := !instrs @ [ Tacky.Jump end_lbl; Tacky.Label else_lbl ]; emit_statement s instrs
        | None -> instrs := !instrs @ [ Tacky.JumpIfZero (v, end_lbl) ]; emit_statement then_s instrs);
       instrs := !instrs @ [ Tacky.Label end_lbl ]
-  | Ast.Compound (Block items) -> List.iter (function Ast.S s -> emit_statement s instrs | Ast.D (Ast.Declaration (name, Some init)) -> let v = emit_tacky init instrs in instrs := !instrs @ [ Tacky.Copy (v, Var name) ] | _ -> ()) items
+  | Ast.Compound (Block items) -> List.iter (function
+      | Ast.S s -> emit_statement s instrs
+      | Ast.D (Ast.VarDecl { vd_name; vd_init = Some init }) -> let v = emit_tacky init instrs in instrs := !instrs @ [ Tacky.Copy (v, Var vd_name) ]
+      | Ast.D _ -> ()
+    ) items
   | Ast.Label (name, s) -> instrs := !instrs @ [ Tacky.Label name ]; emit_statement s instrs
   | Ast.Goto name -> instrs := !instrs @ [ Tacky.Jump name ]
   | Ast.While (cond, body, Some lbl) ->
@@ -78,7 +82,7 @@ let rec emit_statement stmt instrs =
       instrs := !instrs @ [ Tacky.Label start ]; emit_statement body instrs; instrs := !instrs @ [ Tacky.Label cont ]; let v = emit_tacky cond instrs in instrs := !instrs @ [ Tacky.JumpIfNotZero (v, start); Tacky.Label brk ]
   | Ast.For (init, cond, post, body, Some lbl) ->
       let start = "start." ^ lbl in let cont = "continue." ^ lbl in let brk = "break." ^ lbl in
-      (match init with InitDecl (Declaration (name, Some e)) -> let v = emit_tacky e instrs in instrs := !instrs @ [ Tacky.Copy (v, Var name) ] | InitExp (Some e) -> ignore (emit_tacky e instrs) | _ -> ());
+      (match init with InitDecl { vd_name; vd_init = Some e } -> let v = emit_tacky e instrs in instrs := !instrs @ [ Tacky.Copy (v, Var vd_name) ] | InitExp (Some e) -> ignore (emit_tacky e instrs) | _ -> ());
       instrs := !instrs @ [ Tacky.Label start ];
       (match cond with Some e -> let v = emit_tacky e instrs in instrs := !instrs @ [ Tacky.JumpIfZero (v, brk) ] | None -> ());
       emit_statement body instrs; instrs := !instrs @ [ Tacky.Label cont ];
@@ -95,9 +99,10 @@ let rec emit_statement stmt instrs =
   | Ast.Null -> ()
   | _ -> failwith "Missing label annotation"
 
-let gen_function (Ast.Function { name; params; body }) =
-  match body with
-  | Some b -> let instrs = ref [] in emit_statement (Compound b) instrs; instrs := !instrs @ [ Tacky.Return (Constant 0) ]; Some { name; params; body = !instrs }
+(* Corrected: Matches record directly, removing Ast.Function wrapper *)
+let gen_function { fd_name; fd_params; fd_body } =
+  match fd_body with
+  | Some b -> let instrs = ref [] in emit_statement (Compound b) instrs; instrs := !instrs @ [ Tacky.Return (Constant 0) ]; Some { name = fd_name; params = fd_params; body = !instrs }
   | None -> None
 
 let gen_program (Ast.Program funs) = Tacky.Program (List.filter_map gen_function funs)

@@ -23,16 +23,30 @@ type exp =
   | Conditional of exp * exp * exp
   | FunctionCall of identifier * exp list
 
-type declaration = Declaration of identifier * exp option
+(* Unique field names to prevent type ambiguity *)
+type function_declaration = {
+  fd_name : identifier;
+  fd_params : identifier list;
+  fd_body : block option;
+}
 
-type for_init = InitDecl of declaration | InitExp of exp option
+and variable_declaration = {
+  vd_name : identifier;
+  vd_init : exp option;
+}
 
-type switch_cases = {
+and declaration =
+  | FunDecl of function_declaration
+  | VarDecl of variable_declaration
+
+and for_init = InitDecl of variable_declaration | InitExp of exp option
+
+and switch_cases = {
   case_list : (exp * identifier) list;
   default_label : identifier option;
 }
 
-type statement =
+and statement =
   | Return of exp
   | Expression of exp
   | If of exp * statement * statement option
@@ -53,15 +67,9 @@ and block_item = S of statement | D of declaration
 
 and block = Block of block_item list
 
-type function_definition =
-  | Function of {
-      name : identifier;
-      params : identifier list;
-      body : block option;
-    }
+type program = Program of function_declaration list
 
-type program = Program of function_definition list
-
+(* Pretty Printing Logic *)
 let pp_unary_op = function
   | Complement -> "~" | Negate -> "-" | Not -> "!"
 
@@ -85,14 +93,26 @@ let rec pp_exp = function
   | Conditional (c, t, f) -> sprintf "Conditional(%s, %s, %s)" (pp_exp c) (pp_exp t) (pp_exp f)
   | FunctionCall (name, args) -> sprintf "Call(%s, [%s])" name (String.concat ", " (List.map pp_exp args))
 
-let pp_declaration (Declaration (name, init)) =
-  match init with Some e -> sprintf "Decl(%s, %s)" name (pp_exp e) | None -> sprintf "Decl(%s)" name
+let pp_variable_declaration { vd_name; vd_init } =
+  match vd_init with Some e -> sprintf "VarDecl(%s, %s)" vd_name (pp_exp e) | None -> sprintf "VarDecl(%s)" vd_name
 
-let pp_for_init = function InitDecl d -> pp_declaration d | InitExp (Some e) -> pp_exp e | InitExp None -> "None"
-let pp_opt_exp = function Some e -> pp_exp e | None -> "None"
-let pp_label = function Some l -> l | None -> "None"
+let rec pp_function_declaration { fd_name; fd_params; fd_body } =
+  let params_str = String.concat ", " fd_params in
+  match fd_body with
+  | Some (Block items) -> sprintf "FunDecl(%s, [%s], [%s])" fd_name params_str (String.concat "; " (List.map pp_block_item items))
+  | None -> sprintf "FunDecl(%s, [%s], None)" fd_name params_str
 
-let rec pp_statement = function
+and pp_declaration = function
+  | VarDecl vd -> pp_variable_declaration vd
+  | FunDecl fd -> pp_function_declaration fd
+
+and pp_block_item = function S s -> pp_statement s | D d -> pp_declaration d
+
+and pp_for_init = function InitDecl d -> pp_variable_declaration d | InitExp (Some e) -> pp_exp e | InitExp None -> "None"
+and pp_opt_exp = function Some e -> pp_exp e | None -> "None"
+and pp_label = function Some l -> l | None -> "None"
+
+and pp_statement = function
   | Return e -> sprintf "Return(%s)" (pp_exp e)
   | Expression e -> sprintf "Expression(%s)" (pp_exp e)
   | If (c, t, e) -> sprintf "If(%s, %s, %s)" (pp_exp c) (pp_statement t) (match e with Some s -> pp_statement s | None -> "Null")
@@ -109,12 +129,4 @@ let rec pp_statement = function
   | Default (s, l) -> sprintf "Default(%s, %s)" (pp_statement s) (pp_label l)
   | Null -> "Null"
 
-and pp_block_item = function S s -> pp_statement s | D d -> pp_declaration d
-
-let pp_function (Function { name; params; body }) =
-  let params_str = String.concat ", " params in
-  match body with
-  | Some (Block items) -> sprintf "Function(%s, [%s], [%s])" name params_str (String.concat "; " (List.map pp_block_item items))
-  | None -> sprintf "Declare(%s, [%s])" name params_str
-
-let pp_program (Program funs) = String.concat "\n" (List.map pp_function funs)
+let pp_program (Program funs) = String.concat "\n" (List.map pp_function_declaration funs)

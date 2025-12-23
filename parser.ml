@@ -104,18 +104,68 @@ and parse_exp min_prec tokens =
   in
   loop left rest
 
-let parse_declaration tokens =
+let rec parse_params tokens =
+  let tokens = expect LParen tokens in
+  match tokens with
+  | VoidKw :: RParen :: rest -> ([], rest)
+  | RParen :: rest -> ([], rest)
+  | _ ->
+      let rec loop acc toks =
+        let toks = expect IntKw toks in
+        let name, toks = parse_identifier toks in
+        let acc = name :: acc in
+        match toks with
+        | Comma :: t -> loop acc t
+        | RParen :: t -> (List.rev acc, t)
+        | _ -> raise (ParseError "Expected , or ) in parameter list")
+      in loop [] tokens
+
+let rec parse_block tokens =
+  let tokens = expect LBrace tokens in
+  let rec loop acc toks =
+    match toks with
+    | RBrace :: rest -> (Block (List.rev acc), rest)
+    | IntKw :: _ -> let d, rest = parse_declaration toks in loop (D d :: acc) rest
+    | _ -> let s, rest = parse_statement toks in loop (S s :: acc) rest
+  in loop [] tokens
+
+(* ... Inside parse_declaration ... *)
+and parse_declaration tokens =
+  let tokens = expect IntKw tokens in
+  let name, tokens = parse_identifier tokens in
+  match tokens with
+  | LParen :: _ -> (* Function declaration *)
+      let params, tokens = parse_params tokens in
+      (match tokens with
+      | LBrace :: _ ->
+          let block, tokens = parse_block tokens in
+          (FunDecl { fd_name = name; fd_params = params; fd_body = Some block }, tokens)
+      | Semicolon :: tokens ->
+          (FunDecl { fd_name = name; fd_params = params; fd_body = None }, tokens)
+      | _ -> raise (ParseError "Expected function body or ;"))
+  | _ -> (* Variable declaration *)
+      match tokens with
+      | Assign :: rest ->
+          let exp, rest = parse_exp 0 rest in
+          let rest = expect Semicolon rest in
+          (VarDecl { vd_name = name; vd_init = Some exp }, rest)
+      | Semicolon :: rest ->
+          (VarDecl { vd_name = name; vd_init = None }, rest)
+      | _ -> raise (ParseError "Expected ; or = or ( in declaration")
+
+and parse_variable_declaration tokens =
   let tokens = expect IntKw tokens in
   let name, tokens = parse_identifier tokens in
   match tokens with
   | Assign :: rest ->
       let exp, rest = parse_exp 0 rest in
       let rest = expect Semicolon rest in
-      (Declaration (name, Some exp), rest)
-  | Semicolon :: rest -> (Declaration (name, None), rest)
-  | _ -> raise (ParseError "Expected ; or = in declaration")
+      ({ vd_name = name; vd_init = Some exp }, rest)
+  | Semicolon :: rest ->
+      ({ vd_name = name; vd_init = None }, rest)
+  | _ -> raise (ParseError "Expected ; or = in variable declaration")
 
-let rec parse_statement tokens =
+and parse_statement tokens =
   match tokens with
   | ReturnKw :: rest ->
       let exp, tokens = parse_exp 0 rest in
@@ -142,7 +192,7 @@ let rec parse_statement tokens =
       (DoWhile (body, cond, None), rest)
   | ForKw :: rest ->
       let rest = expect LParen rest in
-      let init, rest = match rest with IntKw :: _ -> let d, r = parse_declaration rest in (InitDecl d, r) | Semicolon :: r -> (InitExp None, r) | _ -> let e, r = parse_exp 0 rest in let r = expect Semicolon r in (InitExp (Some e), r) in
+      let init, rest = match rest with IntKw :: _ -> let d, r = parse_variable_declaration rest in (InitDecl d, r) | Semicolon :: r -> (InitExp None, r) | _ -> let e, r = parse_exp 0 rest in let r = expect Semicolon r in (InitExp (Some e), r) in
       let cond, rest = match rest with Semicolon :: _ -> (None, rest) | _ -> let e, r = parse_exp 0 rest in (Some e, r) in
       let rest = expect Semicolon rest in
       let post, rest = match rest with RParen :: _ -> (None, rest) | _ -> let e, r = parse_exp 0 rest in (Some e, r) in
@@ -159,38 +209,11 @@ let rec parse_statement tokens =
   | Semicolon :: rest -> (Null, rest)
   | _ -> let exp, tokens = parse_exp 0 tokens in let tokens = expect Semicolon tokens in (Expression exp, tokens)
 
-and parse_block tokens =
-  let tokens = expect LBrace tokens in
-  let rec loop acc toks =
-    match toks with
-    | RBrace :: rest -> (Block (List.rev acc), rest)
-    | IntKw :: _ -> let d, rest = parse_declaration toks in loop (D d :: acc) rest
-    | _ -> let s, rest = parse_statement toks in loop (S s :: acc) rest
-  in loop [] tokens
-
-let parse_params tokens =
-  let tokens = expect LParen tokens in
-  match tokens with
-  | VoidKw :: RParen :: rest -> ([], rest)
-  | _ ->
-      let rec loop acc toks =
-        let toks = expect IntKw toks in
-        let name, toks = parse_identifier toks in
-        let acc = name :: acc in
-        match toks with
-        | Comma :: t -> loop acc t
-        | RParen :: t -> (List.rev acc, t)
-        | _ -> raise (ParseError "Expected , or ) in parameter list")
-      in loop [] tokens
-
 let parse_function tokens =
-  let tokens = expect IntKw tokens in
-  let name, tokens = parse_identifier tokens in
-  let params, tokens = parse_params tokens in
-  match tokens with
-  | LBrace :: _ -> let block, tokens = parse_block tokens in (Function { name; params; body = Some block }, tokens)
-  | Semicolon :: tokens -> (Function { name; params; body = None }, tokens)
-  | _ -> raise (ParseError "Expected function body or ;")
+  let decl, tokens = parse_declaration tokens in
+  match decl with
+  | FunDecl f -> (f, tokens)
+  | _ -> raise (ParseError "Expected function declaration at top level")
 
 let parse tokens =
   let rec loop acc toks =
