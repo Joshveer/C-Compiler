@@ -66,7 +66,7 @@ let rec resolve_exp exp map =
   | Conditional (c, t, e) -> Conditional (resolve_exp c map, resolve_exp t map, resolve_exp e map)
   | FunctionCall (name, args) ->
       (match find_entry name map with
-       | Some entry -> 
+       | Some entry ->
            FunctionCall (entry.unique_name, List.map (fun a -> resolve_exp a map) args)
        | None -> fail (sprintf "Undeclared function: %s" name))
 
@@ -74,9 +74,9 @@ and resolve_statement stmt map ctx =
   match stmt with
   | Return e -> Return (resolve_exp e map)
   | Expression e -> Expression (resolve_exp e map)
-  | If (c, t, e) -> 
-      If (resolve_exp c map, 
-          resolve_statement t map ctx, 
+  | If (c, t, e) ->
+      If (resolve_exp c map,
+          resolve_statement t map ctx,
           Option.map (fun s -> resolve_statement s map ctx) e)
   | Compound block -> Compound (resolve_block block map ctx)
   | While (c, b, _) ->
@@ -92,15 +92,14 @@ and resolve_statement stmt map ctx =
       let (res_init, map_with_init) = resolve_for_init init inner_map in
       let lbl = make_label "loop" in
       let inner_ctx = { ctx with break_label = Some lbl; continue_label = Some lbl } in
-      For (res_init, 
+      For (res_init,
            Option.map (fun e -> resolve_exp e map_with_init) c,
            Option.map (fun e -> resolve_exp e map_with_init) p,
-           resolve_statement b map_with_init inner_ctx, 
+           resolve_statement b map_with_init inner_ctx,
            Some lbl)
   | Switch (e, b, _, _) ->
       let lbl = make_label "switch" in
       let cases_ref = ref { case_list = []; default_label = None } in
-      (* Switch captures breaks (lbl) but preserves outer continue (ctx.continue_label) *)
       let inner_ctx = { ctx with break_label = Some lbl; current_switch = Some cases_ref } in
       let res_body = resolve_statement b map inner_ctx in
       Switch (resolve_exp e map, res_body, Some lbl, Some !cases_ref)
@@ -156,7 +155,6 @@ and resolve_declaration decl map ~is_top_level =
   | VarDecl vd ->
       if in_current_scope vd.vd_name map then fail (sprintf "Duplicate declaration of %s" vd.vd_name);
       let unique = make_unique_name vd.vd_name in
-      (* Add to map BEFORE resolving init to support 'int a = a;' *)
       let new_map = add_entry vd.vd_name { unique_name = unique; has_linkage = false } map in
       let res_init = Option.map (fun e -> resolve_exp e new_map) vd.vd_init in
       (VarDecl { vd_name = unique; vd_init = res_init }, new_map)
@@ -167,72 +165,52 @@ and resolve_declaration decl map ~is_top_level =
         | Some e when e.has_linkage -> () (* OK, redeclaring external *)
         | _ -> fail (sprintf "Duplicate declaration of %s" fd.fd_name)
       );
-      
-      let unique = fd.fd_name in 
+      let unique = fd.fd_name in
       let new_map = add_entry fd.fd_name { unique_name = unique; has_linkage = true } map in
-      
       let param_map_base = enter_scope new_map in
       let param_map = List.fold_left (fun m p ->
           if in_current_scope p m then fail "Duplicate parameter name";
           add_entry p { unique_name = make_unique_name p; has_linkage = false } m
         ) param_map_base fd.fd_params in
-      
       let res_params = List.map (fun p -> (Option.get (find_entry p param_map)).unique_name) fd.fd_params in
-      let res_body = Option.map (fun (Block items) -> 
+      let res_body = Option.map (fun (Block items) ->
         Block (resolve_block_items items param_map default_ctx)
       ) fd.fd_body in
-      
       (FunDecl { fd with fd_params = res_params; fd_body = res_body }, new_map)
 
 let resolve_program (Program decls) =
-  (* Pre-populate global map with all functions to handle forward references *)
-  let global_map = List.fold_left (fun m fd ->
-      add_entry fd.fd_name { unique_name = fd.fd_name; has_linkage = true } m
-    ) empty_map decls in
-  
   let resolve_one (m, acc) d =
-    let (res_d, _) = resolve_declaration (FunDecl d) m ~is_top_level:true in
-    match res_d with FunDecl fd -> (m, fd :: acc) | _ -> failwith "Logic error"
+    (* Update map 'm' for subsequent functions to catch implicit declaration errors *)
+    let (res_d, next_map) = resolve_declaration (FunDecl d) m ~is_top_level:true in
+    match res_d with 
+    | FunDecl fd -> (next_map, fd :: acc) 
+    | _ -> failwith "Logic error"
   in
-  
-  let (_, reversed_decls) = List.fold_left resolve_one (global_map, []) decls in
+  let (_, reversed_decls) = List.fold_left resolve_one (empty_map, []) decls in
   Program (List.rev reversed_decls)
 
 
 (* --- Pass 2: Type Checking --- *)
 
-type symbol_type = 
-  | Int 
-  | FunType of int * bool (* arity, defined *)
+type symbol_type = Int | FunType of int * bool (* arity, defined *)
 
-(* Helper to get type of expression or validate it *)
 let rec typecheck_exp exp symbols =
   match exp with
   | Constant _ -> Int
-  | Var name -> 
+  | Var name ->
       (match StringMap.find_opt name symbols with
        | Some Int -> Int
        | Some (FunType _) -> fail (sprintf "Function %s used as variable" name)
        | None -> fail (sprintf "Internal error: Undeclared %s in Pass 2" name))
   | Unary (_, e) -> typecheck_exp e symbols
-  | Binary (_, e1, e2) -> 
-      ignore (typecheck_exp e1 symbols); 
-      ignore (typecheck_exp e2 symbols); 
-      Int
+  | Binary (_, e1, e2) ->
+      ignore (typecheck_exp e1 symbols); ignore (typecheck_exp e2 symbols); Int
   | Assignment (e1, e2) | CompoundAssignment (_, e1, e2) ->
-      check_lvalue e1 symbols;
-      ignore (typecheck_exp e1 symbols);
-      ignore (typecheck_exp e2 symbols);
-      Int
+      check_lvalue e1 symbols; ignore (typecheck_exp e1 symbols); ignore (typecheck_exp e2 symbols); Int
   | PrefixIncrement e | PostfixIncrement e | PrefixDecrement e | PostfixDecrement e ->
-      check_lvalue e symbols;
-      ignore (typecheck_exp e symbols);
-      Int
+      check_lvalue e symbols; ignore (typecheck_exp e symbols); Int
   | Conditional (c, t, e) ->
-      ignore (typecheck_exp c symbols);
-      ignore (typecheck_exp t symbols);
-      ignore (typecheck_exp e symbols);
-      Int
+      ignore (typecheck_exp c symbols); ignore (typecheck_exp t symbols); ignore (typecheck_exp e symbols); Int
   | FunctionCall (name, args) ->
       (match StringMap.find_opt name symbols with
        | Some (FunType (arity, _)) ->
@@ -244,7 +222,7 @@ let rec typecheck_exp exp symbols =
 
 and check_lvalue exp symbols =
   match exp with
-  | Var name -> 
+  | Var name ->
       (match StringMap.find_opt name symbols with
        | Some Int -> ()
        | Some (FunType _) -> fail "Assignment to function"
@@ -254,33 +232,23 @@ and check_lvalue exp symbols =
 let rec typecheck_statement stmt symbols =
   match stmt with
   | Return e | Expression e -> ignore (typecheck_exp e symbols)
-  | If (c, t, e) -> 
-      ignore (typecheck_exp c symbols); 
-      typecheck_statement t symbols; 
-      Option.iter (fun s -> typecheck_statement s symbols) e
+  | If (c, t, e) ->
+      ignore (typecheck_exp c symbols); typecheck_statement t symbols; Option.iter (fun s -> typecheck_statement s symbols) e
   | Compound (Block items) -> ignore (typecheck_block_items items symbols)
   | While (c, b, _) | DoWhile (b, c, _) ->
-      ignore (typecheck_exp c symbols);
-      typecheck_statement b symbols
+      ignore (typecheck_exp c symbols); typecheck_statement b symbols
   | For (init, c, p, b, _) ->
       let inner_symbols = match init with
-        | InitDecl vd -> 
+        | InitDecl vd ->
              let s = StringMap.add vd.vd_name Int symbols in
-             Option.iter (fun e -> ignore (typecheck_exp e s)) vd.vd_init;
-             s
-        | InitExp e -> 
-             Option.iter (fun x -> ignore (typecheck_exp x symbols)) e; 
-             symbols
+             Option.iter (fun e -> ignore (typecheck_exp e s)) vd.vd_init; s
+        | InitExp e -> Option.iter (fun x -> ignore (typecheck_exp x symbols)) e; symbols
       in
       Option.iter (fun e -> ignore (typecheck_exp e inner_symbols)) c;
       Option.iter (fun e -> ignore (typecheck_exp e inner_symbols)) p;
       typecheck_statement b inner_symbols
-  | Switch (e, b, _, _) ->
-      ignore (typecheck_exp e symbols);
-      typecheck_statement b symbols
-  | Case (e, s, _) ->
-      ignore (typecheck_exp e symbols);
-      typecheck_statement s symbols
+  | Switch (e, b, _, _) -> ignore (typecheck_exp e symbols); typecheck_statement b symbols
+  | Case (e, s, _) -> ignore (typecheck_exp e symbols); typecheck_statement s symbols
   | Default (s, _) | Label (_, s) -> typecheck_statement s symbols
   | Break _ | Continue _ | Goto _ | Null -> ()
 
@@ -289,8 +257,7 @@ and typecheck_block_items items symbols =
     match item with
     | D (VarDecl vd) ->
         let s' = StringMap.add vd.vd_name Int s in
-        Option.iter (fun e -> ignore (typecheck_exp e s')) vd.vd_init;
-        s'
+        Option.iter (fun e -> ignore (typecheck_exp e s')) vd.vd_init; s'
     | D (FunDecl fd) ->
         let arity = List.length fd.fd_params in
         let has_body = Option.is_some fd.fd_body in
@@ -305,7 +272,7 @@ and typecheck_block_items items symbols =
   ) symbols items
 
 let typecheck_program (Program funs) =
-  (* Build global table first *)
+  (* Build initial global table *)
   let globals = List.fold_left (fun s fd ->
       let arity = List.length fd.fd_params in
       let has_body = Option.is_some fd.fd_body in
@@ -318,13 +285,24 @@ let typecheck_program (Program funs) =
       | None -> StringMap.add fd.fd_name (FunType (arity, has_body)) s
     ) StringMap.empty funs in
   
-  (* Check bodies *)
-  List.iter (fun fd ->
-    match fd.fd_body with
-    | Some (Block items) ->
-        let local_scope = List.fold_left (fun s p -> StringMap.add p Int s) globals fd.fd_params in
-        ignore (typecheck_block_items items local_scope)
-    | None -> ()
-  ) funs;
-  
+  (* Validate bodies and propagate function declarations *)
+  let _ = List.fold_left (fun global_scope fd ->
+    (* 1. Add params to scope (shadows globals, but locally) *)
+    let local_scope = List.fold_left (fun ls p -> StringMap.add p Int ls) global_scope fd.fd_params in
+    
+    (* 2. Check body, which might add local function declarations to scope *)
+    let final_scope = match fd.fd_body with
+      | Some (Block items) -> typecheck_block_items items local_scope
+      | None -> local_scope 
+    in
+    
+    (* 3. Propagate ONLY FunTypes (declarations) to the next function.
+          Discard Int (local variables/params) to prevent scope leaking. *)
+    StringMap.fold (fun key value acc ->
+      match value with
+      | FunType _ -> StringMap.add key value acc
+      | Int -> acc (* Discard local variables *)
+    ) final_scope StringMap.empty
+    
+  ) globals funs in
   Program funs

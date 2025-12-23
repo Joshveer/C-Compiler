@@ -15,12 +15,18 @@ let parse_identifier tokens =
   | _ -> raise (ParseError "Expected identifier")
 
 let get_precedence = function
-  | Star | Slash | Percent -> 50 | Plus | Hyphen -> 45 | ShiftLeft | ShiftRight -> 40
-  | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual -> 35 | Equal | NotEqual -> 30
-  | Ampersand -> 25 | Caret -> 20 | Pipe -> 15 | And -> 10 | Or -> 5 | Question -> 3
-  | Assign | PlusAssign | MinusAssign | MultAssign | DivAssign | ModAssign | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign -> 1
+  | Star | Slash | Percent -> 50 
+  | Plus | Hyphen -> 45 
+  | ShiftLeft | ShiftRight -> 40
+  | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual -> 35 
+  | Equal | NotEqual -> 30
+  | Ampersand -> 25 | Caret -> 20 | Pipe -> 15 
+  | And -> 10 | Or -> 5 | Question -> 3
+  | Assign | PlusAssign | MinusAssign | MultAssign | DivAssign | ModAssign 
+  | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign -> 1
   | _ -> -1
 
+(* Group 1: Expression Parsing (Mutually Recursive) *)
 let rec parse_primary tokens =
   match tokens with
   | IntConst i :: rest -> (Constant i, rest)
@@ -60,9 +66,9 @@ and parse_postfix tokens =
 
 and parse_unary tokens =
   match tokens with
-  | Tilde :: rest -> let (inner, rest) = parse_unary rest in (Unary (Complement, inner), rest)
-  | Hyphen :: rest -> let (inner, rest) = parse_unary rest in (Unary (Negate, inner), rest)
-  | Bang :: rest -> let (inner, rest) = parse_unary rest in (Unary (Not, inner), rest)
+  | Tilde :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Complement, inner), rest)
+  | Hyphen :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Negate, inner), rest)
+  | Bang :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Not, inner), rest)
   | Increment :: rest -> let (inner, rest) = parse_unary rest in (PrefixIncrement inner, rest)
   | Decrement :: rest -> let (inner, rest) = parse_unary rest in (PrefixDecrement inner, rest)
   | _ -> parse_postfix tokens
@@ -77,33 +83,35 @@ and parse_exp min_prec tokens =
       | Question :: rest ->
           let then_exp, rest = parse_exp 0 rest in
           let rest = expect Colon rest in
-          let else_exp, rest = parse_exp 0 rest in
+          (* FIX: Use precedence 3 to force parser to stop before loose assignments *)
+          let else_exp, rest = parse_exp 3 rest in
           loop (Conditional (left, then_exp, else_exp)) rest
       | Assign :: rest -> let (right, rest) = parse_exp prec rest in loop (Assignment (left, right)) rest
-      | PlusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Add, left, right)) rest
-      | MinusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Subtract, left, right)) rest
-      | MultAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Multiply, left, right)) rest
-      | DivAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Divide, left, right)) rest
-      | ModAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Remainder, left, right)) rest
-      | AndAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (BitAnd, left, right)) rest
-      | OrAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (BitOr, left, right)) rest
-      | XorAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Xor, left, right)) rest
-      | LeftShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (ShiftLeft, left, right)) rest
-      | RightShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (ShiftRight, left, right)) rest
+      | PlusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Add, left, right)) rest
+      | MinusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Subtract, left, right)) rest
+      | MultAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Multiply, left, right)) rest
+      | DivAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Divide, left, right)) rest
+      | ModAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Remainder, left, right)) rest
+      | AndAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.BitAnd, left, right)) rest
+      | OrAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.BitOr, left, right)) rest
+      | XorAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Xor, left, right)) rest
+      | LeftShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.ShiftLeft, left, right)) rest
+      | RightShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.ShiftRight, left, right)) rest
       | op :: rest ->
           let (right, rest) = parse_exp (prec + 1) rest in
-          let op = match op with
-            | Plus -> Add | Hyphen -> Subtract | Star -> Multiply | Slash -> Divide | Percent -> Remainder
-            | Ampersand -> BitAnd | Pipe -> BitOr | Caret -> Xor | ShiftLeft -> ShiftLeft | ShiftRight -> ShiftRight
-            | And -> And | Or -> Or | Equal -> Equal | NotEqual -> NotEqual | LessThan -> LessThan
-            | LessOrEqual -> LessOrEqual | GreaterThan -> GreaterThan | GreaterOrEqual -> GreaterOrEqual
+          let op_ast = match op with
+            | Plus -> Ast.Add | Hyphen -> Ast.Subtract | Star -> Ast.Multiply | Slash -> Ast.Divide | Percent -> Ast.Remainder
+            | Ampersand -> Ast.BitAnd | Pipe -> Ast.BitOr | Caret -> Ast.Xor | ShiftLeft -> Ast.ShiftLeft | ShiftRight -> Ast.ShiftRight
+            | And -> Ast.And | Or -> Ast.Or | Equal -> Ast.Equal | NotEqual -> Ast.NotEqual 
+            | LessThan -> Ast.LessThan | LessOrEqual -> Ast.LessOrEqual | GreaterThan -> Ast.GreaterThan | GreaterOrEqual -> Ast.GreaterOrEqual
             | _ -> raise (ParseError "Invalid binary operator")
           in
-          loop (Binary (op, left, right)) rest
+          loop (Binary (op_ast, left, right)) rest
       | _ -> (left, tokens)
   in
   loop left rest
 
+(* Group 2: Function Parameters (Helper) *)
 let rec parse_params tokens =
   let tokens = expect LParen tokens in
   match tokens with
@@ -120,6 +128,7 @@ let rec parse_params tokens =
         | _ -> raise (ParseError "Expected , or ) in parameter list")
       in loop [] tokens
 
+(* Group 3: Statements and Declarations (Mutually Recursive) *)
 let rec parse_block tokens =
   let tokens = expect LBrace tokens in
   let rec loop acc toks =
@@ -129,12 +138,11 @@ let rec parse_block tokens =
     | _ -> let s, rest = parse_statement toks in loop (S s :: acc) rest
   in loop [] tokens
 
-(* ... Inside parse_declaration ... *)
 and parse_declaration tokens =
   let tokens = expect IntKw tokens in
   let name, tokens = parse_identifier tokens in
   match tokens with
-  | LParen :: _ -> (* Function declaration *)
+  | LParen :: _ ->
       let params, tokens = parse_params tokens in
       (match tokens with
       | LBrace :: _ ->
@@ -143,7 +151,7 @@ and parse_declaration tokens =
       | Semicolon :: tokens ->
           (FunDecl { fd_name = name; fd_params = params; fd_body = None }, tokens)
       | _ -> raise (ParseError "Expected function body or ;"))
-  | _ -> (* Variable declaration *)
+  | _ ->
       match tokens with
       | Assign :: rest ->
           let exp, rest = parse_exp 0 rest in
