@@ -35,11 +35,16 @@ type stage =
   | Validate
   | Codegen
   | Asm
+  | Object
   | Full
   | Tackygen
 
 let preprocess input_file preprocessed_file =
   let cmd = sprintf "gcc -E -P %s -o %s" input_file preprocessed_file in
+  run_cmd cmd
+
+let assemble asm_file object_file =
+  let cmd = sprintf "gcc -arch x86_64 -c %s -o %s" asm_file object_file in
   run_cmd cmd
 
 let assemble_and_link asm_file output_file =
@@ -52,6 +57,7 @@ let parse_args () =
   let usage_msg = "Usage: ./mycc [options] <input_file>" in
   let set_stage s = Arg.Unit (fun () -> stage := s) in
   let speclist = [
+    ("-c", set_stage Object, "Compile to object file");
     ("--lex", set_stage Lex, "Run lexer");
     ("--parse", set_stage Parse, "Run parser");
     ("--validate", set_stage Validate, "Run semantic analysis");
@@ -78,7 +84,7 @@ let () =
   let base_name = Filename.remove_extension input_file in
   let preprocessed_file = base_name ^ ".i" in
   let asm_file = base_name ^ ".s" in
-  let output_file = "a.out" in
+  let output_file = match stage with Object -> base_name ^ ".o" | _ -> "a.out" in
 
   try
     preprocess input_file preprocessed_file;
@@ -88,7 +94,6 @@ let () =
     match stage with
     | Lex ->
         let tokens = Lexer.lex source in
-        (* Assuming show_token is defined in your lexer.ml *)
         List.iter (fun t -> print_endline (Lexer.show_token t)) tokens
     | Parse ->
         let tokens = Lexer.lex source in
@@ -124,6 +129,16 @@ let () =
         let asm_ast = Codegen.gen_program tacky in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text
+    | Object ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast in
+        let asm_ast = Codegen.gen_program tacky in
+        let asm_text = Emit.emit_program asm_ast in
+        write_file asm_file asm_text;
+        assemble asm_file output_file
     | Full ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in

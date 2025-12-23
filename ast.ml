@@ -23,7 +23,6 @@ type exp =
   | Conditional of exp * exp * exp
   | FunctionCall of identifier * exp list
 
-(* Unique field names to prevent type ambiguity *)
 type function_declaration = {
   fd_name : identifier;
   fd_params : identifier list;
@@ -69,7 +68,6 @@ and block = Block of block_item list
 
 type program = Program of function_declaration list
 
-(* Pretty Printing Logic *)
 let pp_unary_op = function
   | Complement -> "~" | Negate -> "-" | Not -> "!"
 

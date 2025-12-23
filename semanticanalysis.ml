@@ -7,7 +7,6 @@ module StringSet = Set.Make (String)
 exception SemanticError of string
 let fail msg = raise (SemanticError msg)
 
-(* State for unique names and labels *)
 let var_counter = ref 0
 let label_counter = ref 0
 
@@ -16,8 +15,6 @@ let make_unique_name name =
 
 let make_label name =
   let id = !label_counter in incr label_counter; sprintf "%s.%d" name id
-
-(* --- Pass 1: Identifier Resolution --- *)
 
 type map_entry = {
   unique_name : string;
@@ -29,7 +26,6 @@ type identifier_map = {
   current_scope : StringSet.t;
 }
 
-(* Context for validating break, continue, and case statements *)
 type resolve_context = {
   break_label : string option;
   continue_label : string option;
@@ -180,7 +176,6 @@ and resolve_declaration decl map ~is_top_level =
 
 let resolve_program (Program decls) =
   let resolve_one (m, acc) d =
-    (* Update map 'm' for subsequent functions to catch implicit declaration errors *)
     let (res_d, next_map) = resolve_declaration (FunDecl d) m ~is_top_level:true in
     match res_d with 
     | FunDecl fd -> (next_map, fd :: acc) 
@@ -189,10 +184,7 @@ let resolve_program (Program decls) =
   let (_, reversed_decls) = List.fold_left resolve_one (empty_map, []) decls in
   Program (List.rev reversed_decls)
 
-
-(* --- Pass 2: Type Checking --- *)
-
-type symbol_type = Int | FunType of int * bool (* arity, defined *)
+type symbol_type = Int | FunType of int * bool
 
 let rec typecheck_exp exp symbols =
   match exp with
@@ -272,7 +264,6 @@ and typecheck_block_items items symbols =
   ) symbols items
 
 let typecheck_program (Program funs) =
-  (* Build initial global table *)
   let globals = List.fold_left (fun s fd ->
       let arity = List.length fd.fd_params in
       let has_body = Option.is_some fd.fd_body in
@@ -284,20 +275,12 @@ let typecheck_program (Program funs) =
       | Some Int -> fail "Conflict"
       | None -> StringMap.add fd.fd_name (FunType (arity, has_body)) s
     ) StringMap.empty funs in
-  
-  (* Validate bodies and propagate function declarations *)
   let _ = List.fold_left (fun global_scope fd ->
-    (* 1. Add params to scope (shadows globals, but locally) *)
     let local_scope = List.fold_left (fun ls p -> StringMap.add p Int ls) global_scope fd.fd_params in
-    
-    (* 2. Check body, which might add local function declarations to scope *)
     let final_scope = match fd.fd_body with
       | Some (Block items) -> typecheck_block_items items local_scope
-      | None -> local_scope 
+      | None -> local_scope
     in
-    
-    (* 3. Propagate ONLY FunTypes (declarations) to the next function.
-          Discard Int (local variables/params) to prevent scope leaking. *)
     StringMap.fold (fun key value acc ->
       match value with
       | FunType _ -> StringMap.add key value acc

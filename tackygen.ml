@@ -99,7 +99,6 @@ let rec emit_statement stmt instrs =
   | Ast.Null -> ()
   | _ -> failwith "Missing label annotation"
 
-(* Corrected: Matches record directly, removing Ast.Function wrapper *)
 let gen_function { fd_name; fd_params; fd_body } =
   match fd_body with
   | Some b -> let instrs = ref [] in emit_statement (Compound b) instrs; instrs := !instrs @ [ Tacky.Return (Constant 0) ]; Some { name = fd_name; params = fd_params; body = !instrs }

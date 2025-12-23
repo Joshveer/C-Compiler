@@ -26,7 +26,6 @@ let get_precedence = function
   | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign -> 1
   | _ -> -1
 
-(* Group 1: Expression Parsing (Mutually Recursive) *)
 let rec parse_primary tokens =
   match tokens with
   | IntConst i :: rest -> (Constant i, rest)
@@ -83,7 +82,6 @@ and parse_exp min_prec tokens =
       | Question :: rest ->
           let then_exp, rest = parse_exp 0 rest in
           let rest = expect Colon rest in
-          (* FIX: Use precedence 3 to force parser to stop before loose assignments *)
           let else_exp, rest = parse_exp 3 rest in
           loop (Conditional (left, then_exp, else_exp)) rest
       | Assign :: rest -> let (right, rest) = parse_exp prec rest in loop (Assignment (left, right)) rest
@@ -111,7 +109,6 @@ and parse_exp min_prec tokens =
   in
   loop left rest
 
-(* Group 2: Function Parameters (Helper) *)
 let rec parse_params tokens =
   let tokens = expect LParen tokens in
   match tokens with
@@ -128,7 +125,6 @@ let rec parse_params tokens =
         | _ -> raise (ParseError "Expected , or ) in parameter list")
       in loop [] tokens
 
-(* Group 3: Statements and Declarations (Mutually Recursive) *)
 let rec parse_block tokens =
   let tokens = expect LBrace tokens in
   let rec loop acc toks =

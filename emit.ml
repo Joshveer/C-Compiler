@@ -29,14 +29,14 @@ let emit_instruction = function
   | AllocateStack i -> sprintf "    subq $%d, %%rsp\n" i
   | DeallocateStack i -> sprintf "    addq $%d, %%rsp\n" i
   | Push op -> sprintf "    pushq %s\n" (emit_operand64 op)
-  | Call name -> let target = if Sys.os_type = "Unix" then name ^ "@PLT" else "_" ^ name in sprintf "    call %s\n" target
+  | Call name -> let target = "_" ^ name in sprintf "    call %s\n" target
   | Ret -> "    movq %rbp, %rsp\n    popq %rbp\n    ret\n"
 
 let emit_function { name; instructions } =
-  let prefix = if Sys.os_type = "Unix" then "" else "_" in
+  let prefix = if Sys.os_type = "Unix" then "_" else "" in
   let name = prefix ^ name in
   sprintf "    .globl %s\n%s:\n    pushq %%rbp\n    movq %%rsp, %%rbp\n%s" name name (String.concat "" (List.map emit_instruction instructions))
 
 let emit_program (Program funs) =
   let text = String.concat "\n" (List.map emit_function funs) in
-  if Sys.os_type = "Unix" then text ^ "\n    .section .note.GNU-stack,\"\",@progbits\n" else text
+  text
