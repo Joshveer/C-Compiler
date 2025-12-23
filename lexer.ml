@@ -20,34 +20,55 @@ let keyword_of_ident = function
   | "int" -> Some IntKw | "void" -> Some VoidKw | "return" -> Some ReturnKw
   | "if" -> Some IfKw | "else" -> Some ElseKw | "goto" -> Some GotoKw
   | "do" -> Some DoKw | "while" -> Some WhileKw | "for" -> Some ForKw
-  | "break" -> Some BreakKw | "continue" -> Some ContinueKw
-  | "switch" -> Some SwitchKw | "case" -> Some CaseKw | "default" -> Some DefaultKw
+  | "break" -> Some BreakKw | "continue" -> Some ContinueKw | "switch" -> Some SwitchKw
+  | "case" -> Some CaseKw | "default" -> Some DefaultKw
   | _ -> None
+
+let show_token = function
+  | IntKw -> "IntKw" | VoidKw -> "VoidKw" | ReturnKw -> "ReturnKw"
+  | IfKw -> "IfKw" | ElseKw -> "ElseKw" | GotoKw -> "GotoKw"
+  | DoKw -> "DoKw" | WhileKw -> "WhileKw" | ForKw -> "ForKw"
+  | BreakKw -> "BreakKw" | ContinueKw -> "ContinueKw" | SwitchKw -> "SwitchKw"
+  | CaseKw -> "CaseKw" | DefaultKw -> "DefaultKw"
+  | Ident s -> sprintf "Ident(%s)" s | IntConst i -> sprintf "IntConst(%d)" i
+  | LParen -> "LParen" | RParen -> "RParen" | LBrace -> "LBrace" | RBrace -> "RBrace"
+  | Semicolon -> "Semicolon" | Tilde -> "Tilde" | Hyphen -> "Hyphen"
+  | Decrement -> "Decrement" | Plus -> "Plus" | Increment -> "Increment"
+  | Star -> "Star" | Slash -> "Slash" | Percent -> "Percent"
+  | Ampersand -> "Ampersand" | Pipe -> "Pipe" | Caret -> "Caret"
+  | ShiftLeft -> "ShiftLeft" | ShiftRight -> "ShiftRight" | Bang -> "Bang"
+  | And -> "And" | Or -> "Or" | Equal -> "Equal" | NotEqual -> "NotEqual"
+  | LessThan -> "LessThan" | GreaterThan -> "GreaterThan"
+  | LessOrEqual -> "LessOrEqual" | GreaterOrEqual -> "GreaterOrEqual"
+  | Assign -> "Assign" | PlusAssign -> "PlusAssign" | MinusAssign -> "MinusAssign"
+  | MultAssign -> "MultAssign" | DivAssign -> "DivAssign" | ModAssign -> "ModAssign"
+  | AndAssign -> "AndAssign" | OrAssign -> "OrAssign" | XorAssign -> "XorAssign"
+  | LeftShiftAssign -> "LeftShiftAssign" | RightShiftAssign -> "RightShiftAssign"
+  | Question -> "Question" | Colon -> "Colon" | Comma -> "Comma"
 
 exception LexError of string
 
-let lex (input : string) : token list =
+let lex input =
   let len = String.length input in
-  let rec skip_whitespace i =
-    if i < len && is_whitespace input.[i] then skip_whitespace (i + 1) else i
-  in
   let rec lex_at i acc =
     if i >= len then List.rev acc
     else
       match input.[i] with
-      | c when is_whitespace c -> lex_at (skip_whitespace i) acc
+      | c when is_whitespace c -> lex_at (i + 1) acc
       | '(' -> lex_at (i + 1) (LParen :: acc)
       | ')' -> lex_at (i + 1) (RParen :: acc)
       | '{' -> lex_at (i + 1) (LBrace :: acc)
       | '}' -> lex_at (i + 1) (RBrace :: acc)
       | ';' -> lex_at (i + 1) (Semicolon :: acc)
+      | '~' -> lex_at (i + 1) (Tilde :: acc)
+      | '?' -> lex_at (i + 1) (Question :: acc)
       | ':' -> lex_at (i + 1) (Colon :: acc)
       | ',' -> lex_at (i + 1) (Comma :: acc)
-      | '?' -> lex_at (i + 1) (Question :: acc)
-      | '~' -> lex_at (i + 1) (Tilde :: acc)
       | '*' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (MultAssign :: acc) else lex_at (i + 1) (Star :: acc)
       | '/' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (DivAssign :: acc) else lex_at (i + 1) (Slash :: acc)
       | '%' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (ModAssign :: acc) else lex_at (i + 1) (Percent :: acc)
+      | '^' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (XorAssign :: acc) else lex_at (i + 1) (Caret :: acc)
+      | '!' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (NotEqual :: acc) else lex_at (i + 1) (Bang :: acc)
       | '&' ->
           if i + 1 < len then
             match input.[i + 1] with
@@ -62,19 +83,21 @@ let lex (input : string) : token list =
             | '=' -> lex_at (i + 2) (OrAssign :: acc)
             | _ -> lex_at (i + 1) (Pipe :: acc)
           else lex_at (i + 1) (Pipe :: acc)
-      | '^' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (XorAssign :: acc) else lex_at (i + 1) (Caret :: acc)
-      | '!' -> if i + 1 < len && input.[i + 1] = '=' then lex_at (i + 2) (NotEqual :: acc) else lex_at (i + 1) (Bang :: acc)
       | '<' ->
           if i + 1 < len then
             match input.[i + 1] with
-            | '<' -> if i + 2 < len && input.[i + 2] = '=' then lex_at (i + 3) (LeftShiftAssign :: acc) else lex_at (i + 2) (ShiftLeft :: acc)
+            | '<' ->
+                if i + 2 < len && input.[i + 2] = '=' then lex_at (i + 3) (LeftShiftAssign :: acc)
+                else lex_at (i + 2) (ShiftLeft :: acc)
             | '=' -> lex_at (i + 2) (LessOrEqual :: acc)
             | _ -> lex_at (i + 1) (LessThan :: acc)
           else lex_at (i + 1) (LessThan :: acc)
       | '>' ->
           if i + 1 < len then
             match input.[i + 1] with
-            | '>' -> if i + 2 < len && input.[i + 2] = '=' then lex_at (i + 3) (RightShiftAssign :: acc) else lex_at (i + 2) (ShiftRight :: acc)
+            | '>' ->
+                if i + 2 < len && input.[i + 2] = '=' then lex_at (i + 3) (RightShiftAssign :: acc)
+                else lex_at (i + 2) (ShiftRight :: acc)
             | '=' -> lex_at (i + 2) (GreaterOrEqual :: acc)
             | _ -> lex_at (i + 1) (GreaterThan :: acc)
           else lex_at (i + 1) (GreaterThan :: acc)
@@ -102,11 +125,8 @@ let lex (input : string) : token list =
       | c when is_digit c ->
           let j = ref (i + 1) in
           while !j < len && is_digit input.[!j] do incr j done;
-          if !j < len && is_letter input.[!j] then
-            raise (LexError "Invalid identifier starting with digit")
-          else
-            let num_str = String.sub input i (!j - i) in
-            lex_at !j (IntConst (int_of_string num_str) :: acc)
-      | c -> raise (LexError (sprintf "Unexpected character: %c" c))
+          let num = int_of_string (String.sub input i (!j - i)) in
+          lex_at !j (IntConst num :: acc)
+      | c -> raise (LexError (sprintf "Unknown character: %c" c))
   in
   lex_at 0 []

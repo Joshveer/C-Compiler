@@ -51,40 +51,45 @@ let parse_args () =
   let input_file = ref "" in
   let usage_msg = "Usage: ./mycc [options] <input_file>" in
   let set_stage s = Arg.Unit (fun () -> stage := s) in
-  let speclist =
-    [ ("--lex", set_stage Lex, "Run lexer only")
-    ; ("--parse", set_stage Parse, "Run parser only")
-    ; ("--validate", set_stage Validate, "Run semantic analysis only")
-    ; ("--tacky", set_stage Tackygen, "Run Tacky generation only")
-    ; ("--codegen", set_stage Codegen, "Run code generation only")
-    ]
-  in
+  let speclist = [
+    ("--lex", set_stage Lex, "Run lexer");
+    ("--parse", set_stage Parse, "Run parser");
+    ("--validate", set_stage Validate, "Run semantic analysis");
+    ("--tacky", set_stage Tackygen, "Generate Tacky IR");
+    ("--codegen", set_stage Codegen, "Generate Assembly IR");
+    ("--asm", set_stage Asm, "Generate Assembly file");
+    ("--stage", Arg.String (fun s ->
+       match s with
+       | "lex" -> stage := Lex
+       | "parse" -> stage := Parse
+       | "validate" -> stage := Validate
+       | "tacky" -> stage := Tackygen
+       | "codegen" -> stage := Codegen
+       | "asm" -> stage := Asm
+       | _ -> ()), "Set stage (compatibility)");
+    ("--chapter", Arg.Int (fun _ -> ()), "Ignored");
+  ] in
   Arg.parse speclist (fun filename -> input_file := filename) usage_msg;
-  if !input_file = "" then (
-    Arg.usage speclist usage_msg;
-    exit 1
-  );
+  if !input_file = "" then (Arg.usage speclist usage_msg; exit 1);
   (!stage, !input_file)
 
 let () =
   let stage, input_file = parse_args () in
-  let base = Filename.remove_extension input_file in
-  let preprocessed = base ^ ".i" in
-  let asm_file = base ^ ".s" in
-  let output_file = base in
-
-  remove_if_exists asm_file;
-  remove_if_exists output_file;
-
-  preprocess input_file preprocessed;
-  let source = read_file preprocessed in
-  remove_if_exists preprocessed;
+  let base_name = Filename.remove_extension input_file in
+  let preprocessed_file = base_name ^ ".i" in
+  let asm_file = base_name ^ ".s" in
+  let output_file = "a.out" in
 
   try
+    preprocess input_file preprocessed_file;
+    let source = read_file preprocessed_file in
+    remove_if_exists preprocessed_file;
+
     match stage with
     | Lex ->
-        let _ = Lexer.lex source in
-        ()
+        let tokens = Lexer.lex source in
+        (* Assuming show_token is defined in your lexer.ml *)
+        List.iter (fun t -> print_endline (Lexer.show_token t)) tokens
     | Parse ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
@@ -92,26 +97,30 @@ let () =
     | Validate ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
-        let _ = Semanticanalysis.resolve_program ast in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let _ = Semanticanalysis.typecheck_program resolved_ast in
         ()
     | Tackygen ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let tacky = Tackygen.gen_program resolved_ast in
+        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast in
         print_endline (Tacky.pp_program tacky)
     | Codegen ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let tacky = Tackygen.gen_program resolved_ast in
+        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast in
         let _ = Codegen.gen_program tacky in
         ()
     | Asm ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let tacky = Tackygen.gen_program resolved_ast in
+        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast in
         let asm_ast = Codegen.gen_program tacky in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text
@@ -119,7 +128,8 @@ let () =
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let tacky = Tackygen.gen_program resolved_ast in
+        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast in
         let asm_ast = Codegen.gen_program tacky in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text;
@@ -128,4 +138,4 @@ let () =
   | Lexer.LexError msg -> fail ("Lexing error: " ^ msg)
   | Parser.ParseError msg -> fail ("Parsing error: " ^ msg)
   | Semanticanalysis.SemanticError msg -> fail ("Semantic error: " ^ msg)
-  | e -> fail (Printexc.to_string e)
+  | e -> fail ("Internal error: " ^ Printexc.to_string e)
