@@ -3,6 +3,7 @@ open Printf
 type token =
   | IntKw | VoidKw | ReturnKw | IfKw | ElseKw | GotoKw | DoKw | WhileKw | ForKw
   | BreakKw | ContinueKw | SwitchKw | CaseKw | DefaultKw
+  | StaticKw | ExternKw
   | Ident of string | IntConst of int | LParen | RParen | LBrace | RBrace
   | Semicolon | Tilde | Hyphen | Decrement | Plus | Increment | Star | Slash
   | Percent | Ampersand | Pipe | Caret | ShiftLeft | ShiftRight | Bang | And | Or
@@ -22,6 +23,7 @@ let keyword_of_ident = function
   | "do" -> Some DoKw | "while" -> Some WhileKw | "for" -> Some ForKw
   | "break" -> Some BreakKw | "continue" -> Some ContinueKw | "switch" -> Some SwitchKw
   | "case" -> Some CaseKw | "default" -> Some DefaultKw
+  | "static" -> Some StaticKw | "extern" -> Some ExternKw
   | _ -> None
 
 let show_token = function
@@ -30,6 +32,7 @@ let show_token = function
   | DoKw -> "DoKw" | WhileKw -> "WhileKw" | ForKw -> "ForKw"
   | BreakKw -> "BreakKw" | ContinueKw -> "ContinueKw" | SwitchKw -> "SwitchKw"
   | CaseKw -> "CaseKw" | DefaultKw -> "DefaultKw"
+  | StaticKw -> "StaticKw" | ExternKw -> "ExternKw"
   | Ident s -> sprintf "Ident(%s)" s | IntConst i -> sprintf "IntConst(%d)" i
   | LParen -> "LParen" | RParen -> "RParen" | LBrace -> "LBrace" | RBrace -> "RBrace"
   | Semicolon -> "Semicolon" | Tilde -> "Tilde" | Hyphen -> "Hyphen"

@@ -20,8 +20,11 @@ type instruction =
   | Copy of v * v
   | FunCall of string * v list * v
 
-type function_def = { name : string; params : string list; body : instruction list }
-type program = Program of function_def list
+type top_level =
+  | Function of string * bool * string list * instruction list
+  | StaticVariable of string * bool * int
+
+type program = Program of top_level list
 
 let pp_unop = function Complement -> "Complement" | Negate -> "Negate" | Not -> "Not"
 
@@ -45,6 +48,10 @@ let pp_instruction = function
   | Copy (src, dst) -> sprintf "Copy(%s, %s)" (pp_val src) (pp_val dst)
   | FunCall (name, args, dst) -> sprintf "FunCall(%s, [%s], %s)" name (String.concat ", " (List.map pp_val args)) (pp_val dst)
 
-let pp_function { name; params; body } = sprintf "Function(%s, [%s], [%s])" name (String.concat ", " params) (String.concat "; " (List.map pp_instruction body))
+let pp_top_level = function
+  | Function (name, global, params, body) ->
+      sprintf "Function(%s, %b, [%s], [%s])" name global (String.concat ", " params) (String.concat "; " (List.map pp_instruction body))
+  | StaticVariable (name, global, init) ->
+      sprintf "StaticVariable(%s, %b, %d)" name global init
 
-let pp_program (Program funs) = String.concat "\n" (List.map pp_function funs)
+let pp_program (Program tops) = String.concat "\n" (List.map pp_top_level tops)

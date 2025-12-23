@@ -14,6 +14,29 @@ let parse_identifier tokens =
   | Ident name :: rest -> (name, rest)
   | _ -> raise (ParseError "Expected identifier")
 
+let parse_storage_class = function
+  | StaticKw -> Ast.Static
+  | ExternKw -> Ast.Extern
+  | _ -> failwith "Invalid storage class"
+
+let parse_specifiers tokens =
+  let rec loop types storage_classes toks =
+    match toks with
+    | IntKw :: rest -> loop (IntKw :: types) storage_classes rest
+    | StaticKw :: rest -> loop types (StaticKw :: storage_classes) rest
+    | ExternKw :: rest -> loop types (ExternKw :: storage_classes) rest
+    | _ -> (List.rev types, List.rev storage_classes, toks)
+  in
+  let types, storage_classes, rest = loop [] [] tokens in
+  if List.length types != 1 then raise (ParseError "Invalid type specifier");
+  if List.length storage_classes > 1 then raise (ParseError "Multiple storage class specifiers");
+  let storage_class = match storage_classes with
+    | [sc] -> Some (parse_storage_class sc)
+    | [] -> None
+    | _ -> failwith "Impossible"
+  in
+  ((), storage_class, rest)
+
 let get_precedence = function
   | Star | Slash | Percent -> 50 
   | Plus | Hyphen -> 45 
@@ -130,12 +153,12 @@ let rec parse_block tokens =
   let rec loop acc toks =
     match toks with
     | RBrace :: rest -> (Block (List.rev acc), rest)
-    | IntKw :: _ -> let d, rest = parse_declaration toks in loop (D d :: acc) rest
+    | (IntKw | StaticKw | ExternKw) :: _ -> let d, rest = parse_declaration toks in loop (D d :: acc) rest
     | _ -> let s, rest = parse_statement toks in loop (S s :: acc) rest
   in loop [] tokens
 
 and parse_declaration tokens =
-  let tokens = expect IntKw tokens in
+  let _, storage_class, tokens = parse_specifiers tokens in
   let name, tokens = parse_identifier tokens in
   match tokens with
   | LParen :: _ ->
@@ -143,30 +166,31 @@ and parse_declaration tokens =
       (match tokens with
       | LBrace :: _ ->
           let block, tokens = parse_block tokens in
-          (FunDecl { fd_name = name; fd_params = params; fd_body = Some block }, tokens)
+          (FunDecl { fd_name = name; fd_params = params; fd_body = Some block; fd_storage_class = storage_class }, tokens)
       | Semicolon :: tokens ->
-          (FunDecl { fd_name = name; fd_params = params; fd_body = None }, tokens)
+          (FunDecl { fd_name = name; fd_params = params; fd_body = None; fd_storage_class = storage_class }, tokens)
       | _ -> raise (ParseError "Expected function body or ;"))
   | _ ->
       match tokens with
       | Assign :: rest ->
           let exp, rest = parse_exp 0 rest in
           let rest = expect Semicolon rest in
-          (VarDecl { vd_name = name; vd_init = Some exp }, rest)
+          (VarDecl { vd_name = name; vd_init = Some exp; vd_storage_class = storage_class }, rest)
       | Semicolon :: rest ->
-          (VarDecl { vd_name = name; vd_init = None }, rest)
+          (VarDecl { vd_name = name; vd_init = None; vd_storage_class = storage_class }, rest)
       | _ -> raise (ParseError "Expected ; or = or ( in declaration")
 
 and parse_variable_declaration tokens =
-  let tokens = expect IntKw tokens in
+  let _, storage_class, tokens = parse_specifiers tokens in
+  if storage_class <> None then raise (ParseError "Storage class specifiers not allowed in for loop declarations");
   let name, tokens = parse_identifier tokens in
   match tokens with
   | Assign :: rest ->
       let exp, rest = parse_exp 0 rest in
       let rest = expect Semicolon rest in
-      ({ vd_name = name; vd_init = Some exp }, rest)
+      ({ vd_name = name; vd_init = Some exp; vd_storage_class = None }, rest)
   | Semicolon :: rest ->
-      ({ vd_name = name; vd_init = None }, rest)
+      ({ vd_name = name; vd_init = None; vd_storage_class = None }, rest)
   | _ -> raise (ParseError "Expected ; or = in variable declaration")
 
 and parse_statement tokens =
@@ -221,5 +245,5 @@ let parse_function tokens =
 
 let parse tokens =
   let rec loop acc toks =
-    match toks with [] -> Program (List.rev acc) | _ -> let f, rest = parse_function toks in loop (f :: acc) rest
+    match toks with [] -> Program (List.rev acc) | _ -> let d, rest = parse_declaration toks in loop (d :: acc) rest
   in loop [] tokens

@@ -9,6 +9,8 @@ type binary_op =
 
 type identifier = string
 
+type storage_class = Static | Extern
+
 type exp =
   | Constant of int
   | Var of identifier
@@ -27,11 +29,13 @@ type function_declaration = {
   fd_name : identifier;
   fd_params : identifier list;
   fd_body : block option;
+  fd_storage_class : storage_class option;
 }
 
 and variable_declaration = {
   vd_name : identifier;
   vd_init : exp option;
+  vd_storage_class : storage_class option;
 }
 
 and declaration =
@@ -66,7 +70,7 @@ and block_item = S of statement | D of declaration
 
 and block = Block of block_item list
 
-type program = Program of function_declaration list
+type program = Program of declaration list
 
 let pp_unary_op = function
   | Complement -> "~" | Negate -> "-" | Not -> "!"
@@ -91,14 +95,17 @@ let rec pp_exp = function
   | Conditional (c, t, f) -> sprintf "Conditional(%s, %s, %s)" (pp_exp c) (pp_exp t) (pp_exp f)
   | FunctionCall (name, args) -> sprintf "Call(%s, [%s])" name (String.concat ", " (List.map pp_exp args))
 
-let pp_variable_declaration { vd_name; vd_init } =
-  match vd_init with Some e -> sprintf "VarDecl(%s, %s)" vd_name (pp_exp e) | None -> sprintf "VarDecl(%s)" vd_name
+let pp_variable_declaration { vd_name; vd_init; vd_storage_class } =
+  let storage_str = match vd_storage_class with Some Static -> "Static" | Some Extern -> "Extern" | None -> "" in
+  let init_str = match vd_init with Some e -> sprintf ", %s" (pp_exp e) | None -> "" in
+  sprintf "VarDecl(%s%s%s)" vd_name storage_str init_str
 
-let rec pp_function_declaration { fd_name; fd_params; fd_body } =
+let rec pp_function_declaration { fd_name; fd_params; fd_body; fd_storage_class } =
   let params_str = String.concat ", " fd_params in
+  let storage_str = match fd_storage_class with Some Static -> "Static" | Some Extern -> "Extern" | None -> "" in
   match fd_body with
-  | Some (Block items) -> sprintf "FunDecl(%s, [%s], [%s])" fd_name params_str (String.concat "; " (List.map pp_block_item items))
-  | None -> sprintf "FunDecl(%s, [%s], None)" fd_name params_str
+  | Some (Block items) -> sprintf "FunDecl(%s, [%s], [%s]%s)" fd_name params_str (String.concat "; " (List.map pp_block_item items)) storage_str
+  | None -> sprintf "FunDecl(%s, [%s], None%s)" fd_name params_str storage_str
 
 and pp_declaration = function
   | VarDecl vd -> pp_variable_declaration vd
@@ -127,4 +134,4 @@ and pp_statement = function
   | Default (s, l) -> sprintf "Default(%s, %s)" (pp_statement s) (pp_label l)
   | Null -> "Null"
 
-let pp_program (Program funs) = String.concat "\n" (List.map pp_function_declaration funs)
+let pp_program (Program decls) = String.concat "\n" (List.map pp_declaration decls)

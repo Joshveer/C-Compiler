@@ -149,11 +149,12 @@ and resolve_block_items items map ctx =
 and resolve_declaration decl map ~is_top_level =
   match decl with
   | VarDecl vd ->
-      if in_current_scope vd.vd_name map then fail (sprintf "Duplicate declaration of %s" vd.vd_name);
-      let unique = make_unique_name vd.vd_name in
-      let new_map = add_entry vd.vd_name { unique_name = unique; has_linkage = false } map in
+      if in_current_scope vd.vd_name map && not is_top_level then fail (sprintf "Duplicate declaration of %s" vd.vd_name);
+      let has_linkage = is_top_level || vd.vd_storage_class = Some Ast.Extern in
+      let unique = if has_linkage then vd.vd_name else make_unique_name vd.vd_name in
+      let new_map = add_entry vd.vd_name { unique_name = unique; has_linkage = has_linkage } map in
       let res_init = Option.map (fun e -> resolve_exp e new_map) vd.vd_init in
-      (VarDecl { vd_name = unique; vd_init = res_init }, new_map)
+      (VarDecl { vd_name = unique; vd_init = res_init; vd_storage_class = vd.vd_storage_class }, new_map)
   | FunDecl fd ->
       if (not is_top_level) && Option.is_some fd.fd_body then fail "Nested function definition";
       if in_current_scope fd.fd_name map then (
@@ -175,24 +176,36 @@ and resolve_declaration decl map ~is_top_level =
       (FunDecl { fd with fd_params = res_params; fd_body = res_body }, new_map)
 
 let resolve_program (Program decls) =
-  let resolve_one (m, acc) d =
-    let (res_d, next_map) = resolve_declaration (FunDecl d) m ~is_top_level:true in
-    match res_d with 
-    | FunDecl fd -> (next_map, fd :: acc) 
-    | _ -> failwith "Logic error"
+  let resolve_one (m, acc) decl =
+    let (res_d, next_map) = resolve_declaration decl m ~is_top_level:true in
+    (next_map, res_d :: acc)
   in
   let (_, reversed_decls) = List.fold_left resolve_one (empty_map, []) decls in
   Program (List.rev reversed_decls)
 
+type initial_value = Tentative | Initial of int | NoInitializer
+
+type identifier_attrs =
+  | FunAttr of bool * bool (* defined, global *)
+  | StaticAttr of initial_value * bool (* init, global *)
+  | LocalAttr
+
 type symbol_type = Int | FunType of int * bool
+
+type symbol_entry = {
+  sym_type : symbol_type;
+  sym_attrs : identifier_attrs;
+}
 
 let rec typecheck_exp exp symbols =
   match exp with
   | Constant _ -> Int
   | Var name ->
       (match StringMap.find_opt name symbols with
-       | Some Int -> Int
-       | Some (FunType _) -> fail (sprintf "Function %s used as variable" name)
+       | Some entry ->
+           (match entry.sym_attrs with
+            | FunAttr _ -> fail (sprintf "Function %s used as variable" name)
+            | _ -> entry.sym_type)
        | None -> fail (sprintf "Internal error: Undeclared %s in Pass 2" name))
   | Unary (_, e) -> typecheck_exp e symbols
   | Binary (_, e1, e2) ->
@@ -205,19 +218,23 @@ let rec typecheck_exp exp symbols =
       ignore (typecheck_exp c symbols); ignore (typecheck_exp t symbols); ignore (typecheck_exp e symbols); Int
   | FunctionCall (name, args) ->
       (match StringMap.find_opt name symbols with
-       | Some (FunType (arity, _)) ->
-           if List.length args <> arity then fail "Argument count mismatch";
-           List.iter (fun a -> ignore (typecheck_exp a symbols)) args;
-           Int
-       | Some Int -> fail (sprintf "Variable %s used as function" name)
+       | Some entry ->
+           (match entry.sym_type with
+            | FunType (arity, _) ->
+                if List.length args <> arity then fail "Argument count mismatch";
+                List.iter (fun a -> ignore (typecheck_exp a symbols)) args;
+                Int
+            | Int -> fail (sprintf "Variable %s used as function" name))
        | None -> fail (sprintf "Undeclared function %s" name))
 
 and check_lvalue exp symbols =
   match exp with
   | Var name ->
       (match StringMap.find_opt name symbols with
-       | Some Int -> ()
-       | Some (FunType _) -> fail "Assignment to function"
+       | Some entry ->
+           (match entry.sym_attrs with
+            | FunAttr _ -> fail "Assignment to function"
+            | _ -> ())
        | None -> fail "Undeclared")
   | _ -> fail "Invalid lvalue"
 
@@ -232,7 +249,7 @@ let rec typecheck_statement stmt symbols =
   | For (init, c, p, b, _) ->
       let inner_symbols = match init with
         | InitDecl vd ->
-             let s = StringMap.add vd.vd_name Int symbols in
+             let s = StringMap.add vd.vd_name { sym_type = Int; sym_attrs = LocalAttr } symbols in
              Option.iter (fun e -> ignore (typecheck_exp e s)) vd.vd_init; s
         | InitExp e -> Option.iter (fun x -> ignore (typecheck_exp x symbols)) e; symbols
       in
@@ -248,44 +265,80 @@ and typecheck_block_items items symbols =
   List.fold_left (fun s item ->
     match item with
     | D (VarDecl vd) ->
-        let s' = StringMap.add vd.vd_name Int s in
-        Option.iter (fun e -> ignore (typecheck_exp e s')) vd.vd_init; s'
+        (match vd.vd_storage_class with
+         | Some Ast.Extern ->
+             if Option.is_some vd.vd_init then fail "Initializer on local extern variable declaration";
+             (match StringMap.find_opt vd.vd_name s with
+              | Some _ -> s  (* Already exists, don't add local *)
+              | None -> StringMap.add vd.vd_name { sym_type = Int; sym_attrs = StaticAttr (NoInitializer, true) } s)
+         | _ ->
+             let s' = StringMap.add vd.vd_name { sym_type = Int; sym_attrs = LocalAttr } s in
+             Option.iter (fun e -> ignore (typecheck_exp e s')) vd.vd_init; s')
     | D (FunDecl fd) ->
         let arity = List.length fd.fd_params in
         let has_body = Option.is_some fd.fd_body in
+        let global = fd.fd_storage_class <> Some Ast.Static in
         (match StringMap.find_opt fd.fd_name s with
-         | Some (FunType (old_arity, old_has_body)) ->
-             if old_arity <> arity then fail "Signature mismatch";
-             if old_has_body && has_body then fail "Function redefinition";
-             StringMap.add fd.fd_name (FunType (arity, old_has_body || has_body)) s
-         | Some Int -> fail "Conflict with variable"
-         | None -> StringMap.add fd.fd_name (FunType (arity, has_body)) s)
+         | Some entry ->
+             (match entry.sym_type with
+              | FunType (old_arity, old_has_body) ->
+                  if old_arity <> arity then fail "Signature mismatch";
+                  if old_has_body && has_body then fail "Function redefinition";
+                  let attrs = FunAttr (old_has_body || has_body, global) in
+                  StringMap.add fd.fd_name { sym_type = FunType (arity, old_has_body || has_body); sym_attrs = attrs } s
+              | Int -> fail "Conflict with variable")
+         | None ->
+             let attrs = FunAttr (has_body, global) in
+             StringMap.add fd.fd_name { sym_type = FunType (arity, has_body); sym_attrs = attrs } s)
     | S stmt -> typecheck_statement stmt s; s
   ) symbols items
 
-let typecheck_program (Program funs) =
-  let globals = List.fold_left (fun s fd ->
-      let arity = List.length fd.fd_params in
-      let has_body = Option.is_some fd.fd_body in
-      match StringMap.find_opt fd.fd_name s with
-      | Some (FunType (old_arity, old_has_body)) ->
-          if old_arity <> arity then fail "Signature mismatch";
-          if old_has_body && has_body then fail "Function redefinition";
-          StringMap.add fd.fd_name (FunType (arity, old_has_body || has_body)) s
-      | Some Int -> fail "Conflict"
-      | None -> StringMap.add fd.fd_name (FunType (arity, has_body)) s
-    ) StringMap.empty funs in
-  let _ = List.fold_left (fun global_scope fd ->
-    let local_scope = List.fold_left (fun ls p -> StringMap.add p Int ls) global_scope fd.fd_params in
-    let final_scope = match fd.fd_body with
-      | Some (Block items) -> typecheck_block_items items local_scope
-      | None -> local_scope
-    in
-    StringMap.fold (fun key value acc ->
-      match value with
-      | FunType _ -> StringMap.add key value acc
-      | Int -> acc (* Discard local variables *)
-    ) final_scope StringMap.empty
-    
-  ) globals funs in
-  Program funs
+let typecheck_program (Program decls) =
+  let process_declaration s decl =
+    match decl with
+    | FunDecl fd ->
+        let arity = List.length fd.fd_params in
+        let has_body = Option.is_some fd.fd_body in
+        let global = fd.fd_storage_class <> Some Ast.Static in
+        (match StringMap.find_opt fd.fd_name s with
+         | Some entry ->
+             (match entry.sym_type with
+              | FunType (old_arity, old_has_body) ->
+                  if old_arity <> arity then fail "Signature mismatch";
+                  if old_has_body && has_body then fail "Function redefinition";
+                  let global = match entry.sym_attrs with FunAttr (_, g) -> g | _ -> fail "Type mismatch" in
+                  let attrs = FunAttr (old_has_body || has_body, global) in
+                  StringMap.add fd.fd_name { sym_type = FunType (arity, old_has_body || has_body); sym_attrs = attrs } s
+              | Int -> fail "Conflict")
+         | None ->
+             let attrs = FunAttr (has_body, global) in
+             StringMap.add fd.fd_name { sym_type = FunType (arity, has_body); sym_attrs = attrs } s)
+    | VarDecl vd ->
+        let global = vd.vd_storage_class <> Some Ast.Static in
+        let initial_value = match vd.vd_init with
+          | Some (Ast.Constant i) -> Initial i
+          | Some _ -> fail "Non-constant initializer"
+          | None -> if global then NoInitializer else Tentative
+        in
+        let attrs = StaticAttr (initial_value, global) in
+        StringMap.add vd.vd_name { sym_type = Int; sym_attrs = attrs } s
+  in
+  let globals = List.fold_left process_declaration StringMap.empty decls in
+  let _ = List.fold_left (fun global_scope decl ->
+    match decl with
+    | FunDecl fd ->
+        let local_scope = List.fold_left (fun ls p ->
+          StringMap.add p { sym_type = Int; sym_attrs = LocalAttr } ls
+        ) global_scope fd.fd_params in
+        let final_scope = match fd.fd_body with
+          | Some (Block items) -> typecheck_block_items items local_scope
+          | None -> local_scope
+        in
+        StringMap.fold (fun key entry acc ->
+          match entry.sym_attrs with
+          | FunAttr _ | StaticAttr _ -> StringMap.add key entry acc
+          | LocalAttr -> acc (* Discard local variables *)
+        ) final_scope StringMap.empty
+    | VarDecl _ -> global_scope
+  ) globals decls in
+  (Program decls, globals)

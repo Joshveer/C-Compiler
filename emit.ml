@@ -5,8 +5,8 @@ let emit_reg = function AX -> "%eax" | CX -> "%ecx" | DX -> "%edx" | DI -> "%edi
 let emit_reg64 = function AX -> "%rax" | CX -> "%rcx" | DX -> "%rdx" | DI -> "%rdi" | SI -> "%rsi" | R8 -> "%r8" | R9 -> "%r9" | R10 -> "%r10" | R11 -> "%r11"
 let emit_reg8 = function AX -> "%al" | CX -> "%cl" | DX -> "%dl" | DI -> "%dil" | SI -> "%sil" | R8 -> "%r8b" | R9 -> "%r9b" | R10 -> "%r10b" | R11 -> "%r11b"
 
-let emit_operand = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg r | Stack i -> sprintf "%d(%%rbp)" i | Pseudo _ -> failwith "Pseudo error"
-let emit_operand64 = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg64 r | Stack i -> sprintf "%d(%%rbp)" i | Pseudo _ -> failwith "Pseudo error"
+let emit_operand = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg r | Stack i -> sprintf "%d(%%rbp)" i | Data s -> let prefix = if Sys.os_type = "Unix" then "_" else "" in sprintf "%s%s(%%rip)" prefix s | Pseudo _ -> failwith "Pseudo error"
+let emit_operand64 = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg64 r | Stack i -> sprintf "%d(%%rbp)" i | Data s -> let prefix = if Sys.os_type = "Unix" then "_" else "" in sprintf "%s%s(%%rip)" prefix s | Pseudo _ -> failwith "Pseudo error"
 
 let emit_unary_op = function Neg -> "negl" | Not -> "notl"
 let emit_binop = function Add -> "addl" | Sub -> "subl" | Mult -> "imull" | And -> "andl" | Or -> "orl" | Xor -> "xorl" | Shl -> "sall" | Shr -> "sarl"
@@ -32,11 +32,23 @@ let emit_instruction = function
   | Call name -> let target = "_" ^ name in sprintf "    call %s\n" target
   | Ret -> "    movq %rbp, %rsp\n    popq %rbp\n    ret\n"
 
-let emit_function { name; instructions } =
-  let prefix = if Sys.os_type = "Unix" then "_" else "" in
-  let name = prefix ^ name in
-  sprintf "    .globl %s\n%s:\n    pushq %%rbp\n    movq %%rsp, %%rbp\n%s" name name (String.concat "" (List.map emit_instruction instructions))
+let emit_top_level = function
+  | Function (name, global, instructions) ->
+      let prefix = if Sys.os_type = "Unix" then "_" else "" in
+      let name = prefix ^ name in
+      let global_directive = if global then sprintf "    .globl %s\n" name else "" in
+      sprintf "%s%s:\n    pushq %%rbp\n    movq %%rsp, %%rbp\n%s" global_directive name (String.concat "" (List.map emit_instruction instructions))
+  | StaticVariable (name, global, init) ->
+      let prefix = if Sys.os_type = "Unix" then "_" else "" in
+      let name = prefix ^ name in
+      let global_directive = if global then sprintf "    .globl %s\n" name else "" in
+      let section = if init = 0 then ".bss" else ".data" in
+      let alignment = if Sys.os_type = "Unix" then "    .balign 4\n" else "    .align 4\n" in
+      if init = 0 then
+        sprintf "%s    %s\n%s%s:\n    .zero 4\n" global_directive section alignment name
+      else
+        sprintf "%s    %s\n%s%s:\n    .long %d\n" global_directive section alignment name init
 
-let emit_program (Program funs) =
-  let text = String.concat "\n" (List.map emit_function funs) in
+let emit_program (Program tops) =
+  let text = String.concat "\n" (List.map emit_top_level tops) in
   text

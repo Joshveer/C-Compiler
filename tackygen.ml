@@ -99,9 +99,29 @@ let rec emit_statement stmt instrs =
   | Ast.Null -> ()
   | _ -> failwith "Missing label annotation"
 
-let gen_function { fd_name; fd_params; fd_body } =
-  match fd_body with
-  | Some b -> let instrs = ref [] in emit_statement (Compound b) instrs; instrs := !instrs @ [ Tacky.Return (Constant 0) ]; Some { name = fd_name; params = fd_params; body = !instrs }
+let gen_function fd =
+  match fd.fd_body with
+  | Some b ->
+      let instrs = ref [] in
+      emit_statement (Compound b) instrs;
+      instrs := !instrs @ [ Tacky.Return (Constant 0) ];
+      let global = fd.fd_storage_class <> Some Ast.Static in
+      Some (Tacky.Function (fd.fd_name, global, fd.fd_params, !instrs))
   | None -> None
 
-let gen_program (Ast.Program funs) = Tacky.Program (List.filter_map gen_function funs)
+let gen_program (Ast.Program decls) symbols =
+  let functions = List.filter_map (function
+    | Ast.FunDecl fd -> gen_function fd
+    | Ast.VarDecl _ -> None
+  ) decls in
+  let static_vars = Semanticanalysis.StringMap.fold (fun name entry acc ->
+    match entry.Semanticanalysis.sym_attrs with
+    | Semanticanalysis.StaticAttr (initial_value, global) ->
+        let init_val = match initial_value with
+          | Semanticanalysis.Initial i -> i
+          | Semanticanalysis.Tentative -> 0
+          | Semanticanalysis.NoInitializer -> 0
+        in Tacky.StaticVariable (name, global, init_val) :: acc
+    | _ -> acc
+  ) symbols [] in
+  Tacky.Program (functions @ static_vars)

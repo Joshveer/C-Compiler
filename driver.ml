@@ -103,39 +103,39 @@ let () =
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let _ = Semanticanalysis.typecheck_program resolved_ast in
+        let (_, _) = Semanticanalysis.typecheck_program resolved_ast in
         ()
     | Tackygen ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
-        let tacky = Tackygen.gen_program validated_ast in
+        let (validated_ast, symbols) = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast symbols in
         print_endline (Tacky.pp_program tacky)
     | Codegen ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
-        let tacky = Tackygen.gen_program validated_ast in
-        let _ = Codegen.gen_program tacky in
+        let (validated_ast, symbols) = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast symbols in
+        let _ = Codegen.gen_program tacky symbols in
         ()
     | Asm ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
-        let tacky = Tackygen.gen_program validated_ast in
-        let asm_ast = Codegen.gen_program tacky in
+        let (validated_ast, symbols) = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast symbols in
+        let asm_ast = Codegen.gen_program tacky symbols in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text
     | Object ->
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
-        let tacky = Tackygen.gen_program validated_ast in
-        let asm_ast = Codegen.gen_program tacky in
+        let (validated_ast, symbols) = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast symbols in
+        let asm_ast = Codegen.gen_program tacky symbols in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text;
         assemble asm_file output_file
@@ -143,9 +143,9 @@ let () =
         let tokens = Lexer.lex source in
         let ast = Parser.parse tokens in
         let resolved_ast = Semanticanalysis.resolve_program ast in
-        let validated_ast = Semanticanalysis.typecheck_program resolved_ast in
-        let tacky = Tackygen.gen_program validated_ast in
-        let asm_ast = Codegen.gen_program tacky in
+        let (validated_ast, symbols) = Semanticanalysis.typecheck_program resolved_ast in
+        let tacky = Tackygen.gen_program validated_ast symbols in
+        let asm_ast = Codegen.gen_program tacky symbols in
         let asm_text = Emit.emit_program asm_ast in
         write_file asm_file asm_text;
         assemble_and_link asm_file output_file
