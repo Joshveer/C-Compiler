@@ -1,15 +1,16 @@
 open Ast
 open Tacky
+open Printf
 
 let tmp_counter = ref 0
 
 let make_temporary () =
-  let name = Printf.sprintf "tmp.%d" !tmp_counter in
+  let name = sprintf "tmp.%d" !tmp_counter in
   incr tmp_counter;
   name
 
 let make_label () = 
-  let name = Printf.sprintf "L.%d" !tmp_counter in 
+  let name = sprintf "L.%d" !tmp_counter in 
   incr tmp_counter;
   name
 
@@ -193,6 +194,9 @@ let rec emit_tacky e instrs =
       instrs := !instrs @ [Tacky.Label end_lbl];
       dst
 
+let break_label l = sprintf "break_%s" l
+let continue_label l = sprintf "continue_%s" l
+
 let rec emit_statement stmt instrs =
   match stmt with
   | Ast.Return e ->
@@ -232,7 +236,79 @@ let rec emit_statement stmt instrs =
         | Ast.D (Ast.Declaration (_, None)) -> ()
       in
       List.iter process_item items
+  | Ast.While (cond, body, Some lbl) ->
+      let cont_lbl = continue_label lbl in
+      let brk_lbl = break_label lbl in
+      instrs := !instrs @ [Tacky.Label cont_lbl];
+      let c = emit_tacky cond instrs in
+      instrs := !instrs @ [Tacky.JumpIfZero (c, brk_lbl)];
+      emit_statement body instrs;
+      instrs := !instrs @ [Tacky.Jump cont_lbl; Tacky.Label brk_lbl]
+  | Ast.DoWhile (body, cond, Some lbl) ->
+      let start_lbl = make_label () in
+      let cont_lbl = continue_label lbl in
+      let brk_lbl = break_label lbl in
+      instrs := !instrs @ [Tacky.Label start_lbl];
+      emit_statement body instrs;
+      instrs := !instrs @ [Tacky.Label cont_lbl];
+      let c = emit_tacky cond instrs in
+      instrs := !instrs @ [Tacky.JumpIfNotZero (c, start_lbl); Tacky.Label brk_lbl]
+  | Ast.For (init, cond, post, body, Some lbl) ->
+      let start_lbl = make_label () in
+      let cont_lbl = continue_label lbl in
+      let brk_lbl = break_label lbl in
+      (match init with
+       | Ast.InitDecl (Ast.Declaration (name, Some init_exp)) ->
+           let v = emit_tacky init_exp instrs in
+           instrs := !instrs @ [Tacky.Copy (v, Tacky.Var name)]
+       | Ast.InitExp (Some e) -> let _ = emit_tacky e instrs in ()
+       | _ -> ());
+      instrs := !instrs @ [Tacky.Label start_lbl];
+      (match cond with
+       | Some c ->
+           let v = emit_tacky c instrs in
+           instrs := !instrs @ [Tacky.JumpIfZero (v, brk_lbl)]
+       | None -> ());
+      emit_statement body instrs;
+      instrs := !instrs @ [Tacky.Label cont_lbl];
+      (match post with
+       | Some p -> let _ = emit_tacky p instrs in ()
+       | None -> ());
+      instrs := !instrs @ [Tacky.Jump start_lbl; Tacky.Label brk_lbl]
+  | Ast.Switch (cond, body, Some lbl, Some cases) ->
+      let c = emit_tacky cond instrs in
+      let brk_lbl = break_label lbl in
+      
+      (* Generate comparisons for cases *)
+      List.iter (fun (exp, target) ->
+        let v_exp = emit_tacky exp instrs in
+        let tmp = make_temporary () in
+        let dst = Tacky.Var tmp in
+        (* Calculate e1 == e2 *)
+        instrs := !instrs @ [Tacky.Binary (Tacky.Equal, c, v_exp, dst)];
+        instrs := !instrs @ [Tacky.JumpIfNotZero (dst, target)]
+      ) cases.case_list;
+      
+      (* Jump to default or break *)
+      (match cases.default_label with
+       | Some l -> instrs := !instrs @ [Tacky.Jump l]
+       | None -> instrs := !instrs @ [Tacky.Jump brk_lbl]);
+      
+      emit_statement body instrs;
+      instrs := !instrs @ [Tacky.Label brk_lbl]
+  | Ast.Case (_, stmt, Some lbl) ->
+      instrs := !instrs @ [Tacky.Label lbl];
+      emit_statement stmt instrs
+  | Ast.Default (stmt, Some lbl) ->
+      instrs := !instrs @ [Tacky.Label lbl];
+      emit_statement stmt instrs
+  | Ast.Break (Some lbl) ->
+      (* This now contains full label name, no need to prefix *)
+      instrs := !instrs @ [Tacky.Jump lbl]
+  | Ast.Continue (Some lbl) ->
+      instrs := !instrs @ [Tacky.Jump lbl]
   | Ast.Null -> ()
+  | _ -> failwith "Loop/Switch statement missing label annotation"
 
 let gen_function (Ast.Function (name, body)) =
   let instrs = ref [] in

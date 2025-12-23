@@ -42,6 +42,15 @@ type exp =
 
 type declaration = Declaration of identifier * exp option
 
+type for_init =
+  | InitDecl of declaration
+  | InitExp of exp option
+
+type switch_cases = {
+  case_list : (exp * identifier) list;
+  default_label : identifier option;
+}
+
 type statement =
   | Return of exp
   | Expression of exp
@@ -49,6 +58,14 @@ type statement =
   | Compound of block
   | Goto of identifier
   | Label of identifier * statement
+  | While of exp * statement * identifier option
+  | DoWhile of statement * exp * identifier option
+  | For of for_init * exp option * exp option * statement * identifier option
+  | Break of identifier option
+  | Continue of identifier option
+  | Switch of exp * statement * identifier option * switch_cases option
+  | Case of exp * statement * identifier option
+  | Default of statement * identifier option
   | Null
 
 and block_item =
@@ -110,6 +127,19 @@ let pp_declaration = function
   | Declaration (id, None) -> sprintf "Declaration(%s)" id
   | Declaration (id, Some e) -> sprintf "Declaration(%s, %s)" id (pp_exp e)
 
+let pp_for_init = function
+  | InitDecl d -> pp_declaration d
+  | InitExp (Some e) -> pp_exp e
+  | InitExp None -> "None"
+
+let pp_opt_exp = function
+  | Some e -> pp_exp e
+  | None -> "None"
+
+let pp_label = function
+  | Some l -> sprintf "Label(%s)" l
+  | None -> "NoLabel"
+
 let rec pp_statement = function
   | Return e -> sprintf "Return(%s)" (pp_exp e)
   | Expression e -> sprintf "Expression(%s)" (pp_exp e)
@@ -122,6 +152,21 @@ let rec pp_statement = function
       sprintf "Compound([%s])" items_str
   | Goto label -> sprintf "Goto(%s)" label
   | Label (label, s) -> sprintf "Label(%s, %s)" label (pp_statement s)
+  | While (cond, body, lbl) ->
+      sprintf "While(%s, %s, %s)" (pp_exp cond) (pp_statement body) (pp_label lbl)
+  | DoWhile (body, cond, lbl) ->
+      sprintf "DoWhile(%s, %s, %s)" (pp_statement body) (pp_exp cond) (pp_label lbl)
+  | For (init, cond, post, body, lbl) ->
+      sprintf "For(%s, %s, %s, %s, %s)" 
+        (pp_for_init init) (pp_opt_exp cond) (pp_opt_exp post) (pp_statement body) (pp_label lbl)
+  | Break lbl -> sprintf "Break(%s)" (pp_label lbl)
+  | Continue lbl -> sprintf "Continue(%s)" (pp_label lbl)
+  | Switch (cond, body, lbl, _) ->
+      sprintf "Switch(%s, %s, %s)" (pp_exp cond) (pp_statement body) (pp_label lbl)
+  | Case (exp, stmt, lbl) ->
+      sprintf "Case(%s, %s, %s)" (pp_exp exp) (pp_statement stmt) (pp_label lbl)
+  | Default (stmt, lbl) ->
+      sprintf "Default(%s, %s)" (pp_statement stmt) (pp_label lbl)
   | Null -> "Null"
 
 and pp_block_item = function

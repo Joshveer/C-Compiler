@@ -7,6 +7,14 @@ type token =
   | IfKw
   | ElseKw
   | GotoKw
+  | DoKw
+  | WhileKw
+  | ForKw
+  | BreakKw
+  | ContinueKw
+  | SwitchKw
+  | CaseKw
+  | DefaultKw
   | Ident of string
   | IntConst of int
   | LParen
@@ -72,6 +80,14 @@ let keyword_of_ident = function
   | "if" -> Some IfKw
   | "else" -> Some ElseKw
   | "goto" -> Some GotoKw
+  | "do" -> Some DoKw
+  | "while" -> Some WhileKw
+  | "for" -> Some ForKw
+  | "break" -> Some BreakKw
+  | "continue" -> Some ContinueKw
+  | "switch" -> Some SwitchKw
+  | "case" -> Some CaseKw
+  | "default" -> Some DefaultKw
   | _ -> None
 
 exception LexError of string

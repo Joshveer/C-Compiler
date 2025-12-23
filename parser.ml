@@ -211,6 +211,73 @@ and parse_statement tokens =
   | LBrace :: _ ->
       let block, rest = parse_block tokens in
       (Compound block, rest)
+  | WhileKw :: rest ->
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let body, rest = parse_statement rest in
+      (While (cond, body, None), rest)
+  | DoKw :: rest ->
+      let body, rest = parse_statement rest in
+      let rest = expect WhileKw rest in
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let rest = expect Semicolon rest in
+      (DoWhile (body, cond, None), rest)
+  | ForKw :: rest ->
+      let rest = expect LParen rest in
+      let (init, rest) =
+        match rest with
+        | IntKw :: _ ->
+            let decl, rest = parse_declaration rest in
+            (InitDecl decl, rest)
+        | Semicolon :: rest_semi ->
+            (InitExp None, rest_semi)
+        | _ ->
+            let exp, rest = parse_exp 0 rest in
+            let rest = expect Semicolon rest in
+            (InitExp (Some exp), rest)
+      in
+      let (cond, rest) =
+        match rest with
+        | Semicolon :: rest_semi -> (None, rest_semi)
+        | _ ->
+            let exp, rest = parse_exp 0 rest in
+            let rest = expect Semicolon rest in
+            (Some exp, rest)
+      in
+      let (post, rest) =
+        match rest with
+        | RParen :: _ -> (None, rest)
+        | _ ->
+            let exp, rest = parse_exp 0 rest in
+            (Some exp, rest)
+      in
+      let rest = expect RParen rest in
+      let body, rest = parse_statement rest in
+      (For (init, cond, post, body, None), rest)
+  | BreakKw :: rest ->
+      let rest = expect Semicolon rest in
+      (Break None, rest)
+  | ContinueKw :: rest ->
+      let rest = expect Semicolon rest in
+      (Continue None, rest)
+  | SwitchKw :: rest ->
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let body, rest = parse_statement rest in
+      (Switch (cond, body, None, None), rest)
+  | CaseKw :: rest ->
+      let exp, rest = parse_exp 0 rest in
+      let rest = expect Colon rest in
+      let stmt, rest = parse_statement rest in
+      (Case (exp, stmt, None), rest)
+  | DefaultKw :: rest ->
+      let rest = expect Colon rest in
+      let stmt, rest = parse_statement rest in
+      (Default (stmt, None), rest)
   | Semicolon :: rest ->
       (Null, rest)
   | _ ->
