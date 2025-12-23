@@ -1,19 +1,13 @@
 open Printf
 
-type unary_operator =
-  | Complement
-  | Negate
-  | Not
+type unary_operator = Complement | Negate | Not
 
-type binary_operator = 
-  | Add | Subtract | Multiply | Divide | Remainder
-  | BitAnd | BitOr | Xor | ShiftLeft | ShiftRight
-  | Equal | NotEqual | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual
+type binary_operator =
+  | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | Xor
+  | ShiftLeft | ShiftRight | Equal | NotEqual | LessThan | LessOrEqual | GreaterThan | GreaterOrEqual
   | And | Or
 
-type v =
-  | Constant of int
-  | Var of string
+type v = Constant of int | Var of string
 
 type instruction =
   | Return of v
@@ -24,68 +18,33 @@ type instruction =
   | JumpIfNotZero of v * string
   | Label of string
   | Copy of v * v
+  | FunCall of string * v list * v
 
-type function_def =
-  { name : string
-  ; body : instruction list
-  }
+type function_def = { name : string; params : string list; body : instruction list }
+type program = Program of function_def list
 
-type program =
-  | Program of function_def
-
-let pp_unop = function
-  | Complement -> "Complement"
-  | Negate -> "Negate"
-  | Not -> "Not"
+let pp_unop = function Complement -> "Complement" | Negate -> "Negate" | Not -> "Not"
 
 let pp_binop = function
-  | Add -> "Add"
-  | Subtract -> "Subtract"
-  | Multiply -> "Multiply"
-  | Divide -> "Divide"
-  | Remainder -> "Remainder"
-  | BitAnd -> "BitAnd"
-  | BitOr -> "BitOr"
-  | Xor -> "Xor"
-  | ShiftLeft -> "ShiftLeft"
-  | ShiftRight -> "ShiftRight"
-  | Equal -> "Equal"
-  | NotEqual -> "NotEqual"
-  | LessThan -> "LessThan"
-  | LessOrEqual -> "LessOrEqual"
-  | GreaterThan -> "GreaterThan"
-  | GreaterOrEqual -> "GreaterOrEqual"
-  | And -> "And"
-  | Or -> "Or"
+  | Add -> "Add" | Subtract -> "Subtract" | Multiply -> "Multiply" | Divide -> "Divide"
+  | Remainder -> "Remainder" | BitAnd -> "BitAnd" | BitOr -> "BitOr" | Xor -> "Xor"
+  | ShiftLeft -> "ShiftLeft" | ShiftRight -> "ShiftRight" | Equal -> "Equal" | NotEqual -> "NotEqual"
+  | LessThan -> "LessThan" | LessOrEqual -> "LessOrEqual" | GreaterThan -> "GreaterThan" | GreaterOrEqual -> "GreaterOrEqual"
+  | And -> "And" | Or -> "Or"
 
-let pp_val = function
-  | Constant i -> sprintf "Constant(%d)" i
-  | Var s -> sprintf "Var(%s)" s
+let pp_val = function Constant i -> sprintf "Constant(%d)" i | Var s -> sprintf "Var(%s)" s
 
 let pp_instruction = function
-  | Return v -> 
-      sprintf "Return(%s)" (pp_val v)
-  | Unary (op, src, dst) -> 
-      sprintf "Unary(%s, %s, %s)" (pp_unop op) (pp_val src) (pp_val dst)
-  | Binary (op, src1, src2, dst) ->
-      sprintf "Binary(%s, %s, %s, %s)" 
-        (pp_binop op) (pp_val src1) (pp_val src2) (pp_val dst)
-  | Jump target -> 
-      sprintf "Jump(%s)" target
-  | JumpIfZero (v, target) -> 
-      sprintf "JumpIfZero(%s, %s)" (pp_val v) target
-  | JumpIfNotZero (v, target) -> 
-      sprintf "JumpIfNotZero(%s, %s)" (pp_val v) target
-  | Label l -> 
-      sprintf "Label(%s)" l
-  | Copy (src, dst) -> 
-      sprintf "Copy(%s, %s)" (pp_val src) (pp_val dst)
+  | Return v -> sprintf "Return(%s)" (pp_val v)
+  | Unary (op, src, dst) -> sprintf "Unary(%s, %s, %s)" (pp_unop op) (pp_val src) (pp_val dst)
+  | Binary (op, src1, src2, dst) -> sprintf "Binary(%s, %s, %s, %s)" (pp_binop op) (pp_val src1) (pp_val src2) (pp_val dst)
+  | Jump target -> sprintf "Jump(%s)" target
+  | JumpIfZero (v, target) -> sprintf "JumpIfZero(%s, %s)" (pp_val v) target
+  | JumpIfNotZero (v, target) -> sprintf "JumpIfNotZero(%s, %s)" (pp_val v) target
+  | Label target -> sprintf "Label(%s)" target
+  | Copy (src, dst) -> sprintf "Copy(%s, %s)" (pp_val src) (pp_val dst)
+  | FunCall (name, args, dst) -> sprintf "FunCall(%s, [%s], %s)" name (String.concat ", " (List.map pp_val args)) (pp_val dst)
 
-let pp_program (Program f) =
-  let body_str = 
-    f.body 
-    |> List.map pp_instruction 
-    |> List.map (fun s -> "    " ^ s) 
-    |> String.concat "\n" 
-  in
-  sprintf "Function(\n  name=\"%s\",\n  body=\n%s\n)" f.name body_str
+let pp_function { name; params; body } = sprintf "Function(%s, [%s], [%s])" name (String.concat ", " params) (String.concat "; " (List.map pp_instruction body))
+
+let pp_program (Program funs) = String.concat "\n" (List.map pp_function funs)

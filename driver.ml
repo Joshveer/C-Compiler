@@ -1,6 +1,3 @@
-(*arch -x86_64 zsh*)
-(*ocamlc -o mycc ast.ml asm.ml tacky.ml lexer.ml parser.ml semanticanalysis.ml tackygen.ml codegen.ml emit.ml driver.ml*)
-
 open Printf
 open Lexer
 open Parser
@@ -83,46 +80,52 @@ let () =
   let source = read_file preprocessed in
   remove_if_exists preprocessed;
 
-  match stage with
-  | Lex ->
-      let _ = Lexer.lex source in
-      ()
-  | Parse ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      print_endline (Ast.pp_program ast)
-  | Validate ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let _ = Semanticanalysis.resolve_program ast in
-      ()
-  | Tackygen ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let resolved_ast = Semanticanalysis.resolve_program ast in
-      let tacky = Tackygen.gen_program resolved_ast in
-      print_endline (Tacky.pp_program tacky)
-  | Codegen ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let resolved_ast = Semanticanalysis.resolve_program ast in
-      let tacky = Tackygen.gen_program resolved_ast in
-      let _ = Codegen.gen_program tacky in
-      ()
-  | Asm ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let resolved_ast = Semanticanalysis.resolve_program ast in
-      let tacky = Tackygen.gen_program resolved_ast in
-      let asm_ast = Codegen.gen_program tacky in
-      let asm_text = Emit.emit_program asm_ast in
-      write_file asm_file asm_text
-  | Full ->
-      let tokens = Lexer.lex source in
-      let ast = Parser.parse tokens in
-      let resolved_ast = Semanticanalysis.resolve_program ast in
-      let tacky = Tackygen.gen_program resolved_ast in
-      let asm_ast = Codegen.gen_program tacky in
-      let asm_text = Emit.emit_program asm_ast in
-      write_file asm_file asm_text;
-      assemble_and_link asm_file output_file
+  try
+    match stage with
+    | Lex ->
+        let _ = Lexer.lex source in
+        ()
+    | Parse ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        print_endline (Ast.pp_program ast)
+    | Validate ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let _ = Semanticanalysis.resolve_program ast in
+        ()
+    | Tackygen ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let tacky = Tackygen.gen_program resolved_ast in
+        print_endline (Tacky.pp_program tacky)
+    | Codegen ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let tacky = Tackygen.gen_program resolved_ast in
+        let _ = Codegen.gen_program tacky in
+        ()
+    | Asm ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let tacky = Tackygen.gen_program resolved_ast in
+        let asm_ast = Codegen.gen_program tacky in
+        let asm_text = Emit.emit_program asm_ast in
+        write_file asm_file asm_text
+    | Full ->
+        let tokens = Lexer.lex source in
+        let ast = Parser.parse tokens in
+        let resolved_ast = Semanticanalysis.resolve_program ast in
+        let tacky = Tackygen.gen_program resolved_ast in
+        let asm_ast = Codegen.gen_program tacky in
+        let asm_text = Emit.emit_program asm_ast in
+        write_file asm_file asm_text;
+        assemble_and_link asm_file output_file
+  with
+  | Lexer.LexError msg -> fail ("Lexing error: " ^ msg)
+  | Parser.ParseError msg -> fail ("Parsing error: " ^ msg)
+  | Semanticanalysis.SemanticError msg -> fail ("Semantic error: " ^ msg)
+  | e -> fail (Printexc.to_string e)

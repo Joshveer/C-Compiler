@@ -1,37 +1,11 @@
-type reg =
-  | AX
-  | DX
-  | CX
-  | R10
-  | R11
+type reg = AX | CX | DX | DI | SI | R8 | R9 | R10 | R11
 
-type operand =
-  | Imm of int
-  | Reg of reg
-  | Pseudo of string
-  | Stack of int
+type operand = Imm of int | Reg of reg | Pseudo of string | Stack of int
 
-type unary_op =
-  | Neg
-  | Not
+type unary_op = Neg | Not
+type binary_op = Add | Sub | Mult | And | Or | Xor | Shl | Shr
 
-type binary_op =
-  | Add
-  | Sub
-  | Mult
-  | And
-  | Or
-  | Xor
-  | Shl
-  | Shr
-
-type cond_code =
-  | E
-  | NE
-  | G
-  | GE
-  | L
-  | LE
+type cond_code = E | NE | G | GE | L | LE
 
 type instruction =
   | Mov of operand * operand
@@ -45,12 +19,10 @@ type instruction =
   | SetCC of cond_code * operand
   | Label of string
   | AllocateStack of int
+  | DeallocateStack of int
+  | Push of operand
+  | Call of string
   | Ret
 
-type function_def =
-  { name : string
-  ; instructions : instruction list
-  }
-
-type program =
-  | Program of function_def
+type function_def = { name : string; instructions : instruction list }
+type program = Program of function_def list
