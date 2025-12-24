@@ -37,6 +37,22 @@ let parse_specifiers tokens =
   in
   ((), storage_class, rest)
 
+let parse_params tokens =
+  match tokens with
+  | RParen :: rest -> ([], rest)
+  | VoidKw :: RParen :: rest -> ([], rest)
+  | _ ->
+      let rec loop acc toks =
+        let _, _, toks = parse_specifiers toks in
+        let name, toks = parse_identifier toks in
+        match toks with
+        | Comma :: rest -> loop (name :: acc) rest
+        | _ -> (List.rev (name :: acc), toks)
+      in
+      let args, rest = loop [] tokens in
+      let rest = expect RParen rest in
+      (args, rest)
+
 let get_precedence = function
   | Star | Slash | Percent -> 50 
   | Plus | Hyphen -> 45 
@@ -68,132 +84,73 @@ and parse_args tokens =
   | _ ->
       let rec loop acc toks =
         let arg, toks = parse_exp 0 toks in
-        let acc = arg :: acc in
         match toks with
-        | Comma :: t -> loop acc t
-        | RParen :: t -> (List.rev acc, t)
-        | _ -> raise (ParseError "Expected , or ) in argument list")
+        | Comma :: rest -> loop (arg :: acc) rest
+        | _ -> (List.rev (arg :: acc), toks)
       in
-      loop [] tokens
-
-and parse_postfix tokens =
-  let (exp, rest) = parse_primary tokens in
-  let rec loop e toks =
-    match toks with
-    | Increment :: t -> loop (PostfixIncrement e) t
-    | Decrement :: t -> loop (PostfixDecrement e) t
-    | _ -> (e, toks)
-  in
-  loop exp rest
-
-and parse_unary tokens =
-  match tokens with
-  | Tilde :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Complement, inner), rest)
-  | Hyphen :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Negate, inner), rest)
-  | Bang :: rest -> let (inner, rest) = parse_unary rest in (Unary (Ast.Not, inner), rest)
-  | Increment :: rest -> let (inner, rest) = parse_unary rest in (PrefixIncrement inner, rest)
-  | Decrement :: rest -> let (inner, rest) = parse_unary rest in (PrefixDecrement inner, rest)
-  | _ -> parse_postfix tokens
+      let args, rest = loop [] tokens in
+      let rest = expect RParen rest in
+      (args, rest)
 
 and parse_exp min_prec tokens =
-  let (left, rest) = parse_unary tokens in
-  let rec loop left tokens =
-    let prec = match tokens with op :: _ -> get_precedence op | _ -> -1 in
-    if prec < min_prec then (left, tokens)
-    else
-      match tokens with
-      | Question :: rest ->
-          let then_exp, rest = parse_exp 0 rest in
-          let rest = expect Colon rest in
-          let else_exp, rest = parse_exp 3 rest in
-          loop (Conditional (left, then_exp, else_exp)) rest
-      | Assign :: rest -> let (right, rest) = parse_exp prec rest in loop (Assignment (left, right)) rest
-      | PlusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Add, left, right)) rest
-      | MinusAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Subtract, left, right)) rest
-      | MultAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Multiply, left, right)) rest
-      | DivAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Divide, left, right)) rest
-      | ModAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Remainder, left, right)) rest
-      | AndAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.BitAnd, left, right)) rest
-      | OrAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.BitOr, left, right)) rest
-      | XorAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.Xor, left, right)) rest
-      | LeftShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.ShiftLeft, left, right)) rest
-      | RightShiftAssign :: rest -> let (right, rest) = parse_exp prec rest in loop (CompoundAssignment (Ast.ShiftRight, left, right)) rest
-      | op :: rest ->
-          let (right, rest) = parse_exp (prec + 1) rest in
-          let op_ast = match op with
-            | Plus -> Ast.Add | Hyphen -> Ast.Subtract | Star -> Ast.Multiply | Slash -> Ast.Divide | Percent -> Ast.Remainder
-            | Ampersand -> Ast.BitAnd | Pipe -> Ast.BitOr | Caret -> Ast.Xor | ShiftLeft -> Ast.ShiftLeft | ShiftRight -> Ast.ShiftRight
-            | And -> Ast.And | Or -> Ast.Or | Equal -> Ast.Equal | NotEqual -> Ast.NotEqual 
-            | LessThan -> Ast.LessThan | LessOrEqual -> Ast.LessOrEqual | GreaterThan -> Ast.GreaterThan | GreaterOrEqual -> Ast.GreaterOrEqual
-            | _ -> raise (ParseError "Invalid binary operator")
-          in
-          loop (Binary (op_ast, left, right)) rest
-      | _ -> (left, tokens)
+  let rec loop lhs tokens =
+    match tokens with
+    | op :: rest ->
+        let prec = get_precedence op in
+        if prec >= min_prec then
+          match op with
+          | Question ->
+              let true_exp, rest = parse_exp 0 rest in
+              let rest = expect Colon rest in
+              let false_exp, rest = parse_exp prec rest in
+              loop (Conditional (lhs, true_exp, false_exp)) rest
+          | Assign | PlusAssign | MinusAssign | MultAssign | DivAssign | ModAssign | AndAssign | OrAssign | XorAssign | LeftShiftAssign | RightShiftAssign ->
+              let rhs, rest = parse_exp prec rest in
+              let new_lhs = match op with
+                | Assign -> Assignment (lhs, rhs)
+                | PlusAssign -> CompoundAssignment (Add, lhs, rhs)
+                | MinusAssign -> CompoundAssignment (Subtract, lhs, rhs)
+                | MultAssign -> CompoundAssignment (Multiply, lhs, rhs)
+                | DivAssign -> CompoundAssignment (Divide, lhs, rhs)
+                | ModAssign -> CompoundAssignment (Remainder, lhs, rhs)
+                | AndAssign -> CompoundAssignment (BitAnd, lhs, rhs)
+                | OrAssign -> CompoundAssignment (BitOr, lhs, rhs)
+                | XorAssign -> CompoundAssignment (Xor, lhs, rhs)
+                | LeftShiftAssign -> CompoundAssignment (ShiftLeft, lhs, rhs)
+                | RightShiftAssign -> CompoundAssignment (ShiftRight, lhs, rhs)
+                | _ -> failwith "Impossible"
+              in
+              loop new_lhs rest
+          | _ ->
+              let rhs, rest = parse_exp (prec + 1) rest in
+              let bin_op = match op with
+                | Plus -> Add | Hyphen -> Subtract | Star -> Multiply | Slash -> Divide
+                | Percent -> Remainder | Ampersand -> BitAnd | Pipe -> BitOr | Caret -> Xor
+                | ShiftLeft -> ShiftLeft | ShiftRight -> ShiftRight | And -> And | Or -> Or
+                | Equal -> Equal | NotEqual -> NotEqual | LessThan -> LessThan
+                | LessOrEqual -> LessOrEqual | GreaterThan -> GreaterThan
+                | GreaterOrEqual -> GreaterOrEqual | _ -> failwith "Invalid binary operator"
+              in
+              loop (Binary (bin_op, lhs, rhs)) rest
+        else (lhs, tokens)
+    | _ -> (lhs, tokens)
   in
-  loop left rest
+  let factor, rest = match tokens with
+    | Tilde :: rest -> let e, r = parse_exp 50 rest in (Unary (Complement, e), r)
+    | Hyphen :: rest -> let e, r = parse_exp 50 rest in (Unary (Negate, e), r)
+    | Bang :: rest -> let e, r = parse_exp 50 rest in (Unary (Not, e), r)
+    | Increment :: rest -> let e, r = parse_exp 50 rest in (PrefixIncrement e, r)
+    | Decrement :: rest -> let e, r = parse_exp 50 rest in (PrefixDecrement e, r)
+    | _ ->
+        let p, r = parse_primary tokens in
+        match r with
+        | Increment :: rest -> (PostfixIncrement p, rest)
+        | Decrement :: rest -> (PostfixDecrement p, rest)
+        | _ -> (p, r)
+  in
+  loop factor rest
 
-let rec parse_params tokens =
-  let tokens = expect LParen tokens in
-  match tokens with
-  | VoidKw :: RParen :: rest -> ([], rest)
-  | RParen :: rest -> ([], rest)
-  | _ ->
-      let rec loop acc toks =
-        let toks = expect IntKw toks in
-        let name, toks = parse_identifier toks in
-        let acc = name :: acc in
-        match toks with
-        | Comma :: t -> loop acc t
-        | RParen :: t -> (List.rev acc, t)
-        | _ -> raise (ParseError "Expected , or ) in parameter list")
-      in loop [] tokens
-
-let rec parse_block tokens =
-  let tokens = expect LBrace tokens in
-  let rec loop acc toks =
-    match toks with
-    | RBrace :: rest -> (Block (List.rev acc), rest)
-    | (IntKw | StaticKw | ExternKw) :: _ -> let d, rest = parse_declaration toks in loop (D d :: acc) rest
-    | _ -> let s, rest = parse_statement toks in loop (S s :: acc) rest
-  in loop [] tokens
-
-and parse_declaration tokens =
-  let _, storage_class, tokens = parse_specifiers tokens in
-  let name, tokens = parse_identifier tokens in
-  match tokens with
-  | LParen :: _ ->
-      let params, tokens = parse_params tokens in
-      (match tokens with
-      | LBrace :: _ ->
-          let block, tokens = parse_block tokens in
-          (FunDecl { fd_name = name; fd_params = params; fd_body = Some block; fd_storage_class = storage_class }, tokens)
-      | Semicolon :: tokens ->
-          (FunDecl { fd_name = name; fd_params = params; fd_body = None; fd_storage_class = storage_class }, tokens)
-      | _ -> raise (ParseError "Expected function body or ;"))
-  | _ ->
-      match tokens with
-      | Assign :: rest ->
-          let exp, rest = parse_exp 0 rest in
-          let rest = expect Semicolon rest in
-          (VarDecl { vd_name = name; vd_init = Some exp; vd_storage_class = storage_class }, rest)
-      | Semicolon :: rest ->
-          (VarDecl { vd_name = name; vd_init = None; vd_storage_class = storage_class }, rest)
-      | _ -> raise (ParseError "Expected ; or = or ( in declaration")
-
-and parse_variable_declaration tokens =
-  let _, storage_class, tokens = parse_specifiers tokens in
-  if storage_class <> None then raise (ParseError "Storage class specifiers not allowed in for loop declarations");
-  let name, tokens = parse_identifier tokens in
-  match tokens with
-  | Assign :: rest ->
-      let exp, rest = parse_exp 0 rest in
-      let rest = expect Semicolon rest in
-      ({ vd_name = name; vd_init = Some exp; vd_storage_class = None }, rest)
-  | Semicolon :: rest ->
-      ({ vd_name = name; vd_init = None; vd_storage_class = None }, rest)
-  | _ -> raise (ParseError "Expected ; or = in variable declaration")
-
-and parse_statement tokens =
+let rec parse_statement tokens =
   match tokens with
   | ReturnKw :: rest ->
       let exp, tokens = parse_exp 0 rest in
@@ -203,24 +160,42 @@ and parse_statement tokens =
       let rest = expect LParen rest in
       let cond, rest = parse_exp 0 rest in
       let rest = expect RParen rest in
-      let then_s, rest = parse_statement rest in
-      let else_s, rest = match rest with ElseKw :: rest -> let s, rest = parse_statement rest in (Some s, rest) | _ -> (None, rest) in
-      (If (cond, then_s, else_s), rest)
-  | LBrace :: _ -> let block, rest = parse_block tokens in (Compound block, rest)
-  | GotoKw :: rest -> let name, rest = parse_identifier rest in let rest = expect Semicolon rest in (Goto name, rest)
-  | Ident name :: Colon :: rest -> let stmt, rest = parse_statement rest in (Label (name, stmt), rest)
+      let then_stmt, rest = parse_statement rest in
+      (match rest with
+       | ElseKw :: rest -> let else_stmt, rest = parse_statement rest in (If (cond, then_stmt, Some else_stmt), rest)
+       | _ -> (If (cond, then_stmt, None), rest))
+  | LBrace :: rest ->
+      let block, rest = parse_block rest in
+      (Compound block, rest)
+  | IntKw :: _ | StaticKw :: _ | ExternKw :: _ -> raise (ParseError "Declaration not allowed here")
+  | GotoKw :: rest ->
+      let label, rest = parse_identifier rest in
+      let rest = expect Semicolon rest in
+      (Goto label, rest)
+  | Ident label :: Colon :: rest ->
+      let stmt, rest = parse_statement rest in
+      (Label (label, stmt), rest)
   | WhileKw :: rest ->
-      let rest = expect LParen rest in let cond, rest = parse_exp 0 rest in
-      let rest = expect RParen rest in let body, rest = parse_statement rest in
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let body, rest = parse_statement rest in
       (While (cond, body, None), rest)
   | DoKw :: rest ->
-      let body, rest = parse_statement rest in let rest = expect WhileKw rest in
-      let rest = expect LParen rest in let cond, rest = parse_exp 0 rest in
-      let rest = expect RParen rest in let rest = expect Semicolon rest in
+      let body, rest = parse_statement rest in
+      let rest = expect WhileKw rest in
+      let rest = expect LParen rest in
+      let cond, rest = parse_exp 0 rest in
+      let rest = expect RParen rest in
+      let rest = expect Semicolon rest in
       (DoWhile (body, cond, None), rest)
   | ForKw :: rest ->
       let rest = expect LParen rest in
-      let init, rest = match rest with IntKw :: _ -> let d, r = parse_variable_declaration rest in (InitDecl d, r) | Semicolon :: r -> (InitExp None, r) | _ -> let e, r = parse_exp 0 rest in let r = expect Semicolon r in (InitExp (Some e), r) in
+      let init, rest = match rest with
+        | IntKw :: _ | StaticKw :: _ | ExternKw :: _ -> let d, r = parse_declaration rest in (match d with VarDecl v -> (InitDecl v, r) | _ -> raise (ParseError "Invalid for loop init"))
+        | Semicolon :: r -> (InitExp None, r)
+        | _ -> let e, r = parse_exp 0 rest in let r = expect Semicolon r in (InitExp (Some e), r)
+      in
       let cond, rest = match rest with Semicolon :: _ -> (None, rest) | _ -> let e, r = parse_exp 0 rest in (Some e, r) in
       let rest = expect Semicolon rest in
       let post, rest = match rest with RParen :: _ -> (None, rest) | _ -> let e, r = parse_exp 0 rest in (Some e, r) in
@@ -237,6 +212,45 @@ and parse_statement tokens =
   | Semicolon :: rest -> (Null, rest)
   | _ -> let exp, tokens = parse_exp 0 tokens in let tokens = expect Semicolon tokens in (Expression exp, tokens)
 
+and parse_block_item tokens =
+  match tokens with
+  | IntKw :: _ | StaticKw :: _ | ExternKw :: _ ->
+      let decl, rest = parse_declaration tokens in
+      (D decl, rest)
+  | _ ->
+      let stmt, rest = parse_statement tokens in
+      (S stmt, rest)
+
+and parse_block tokens =
+  let rec loop items toks =
+    match toks with
+    | RBrace :: rest -> (Block (List.rev items), rest)
+    | _ ->
+        let item, rest = parse_block_item toks in
+        loop (item :: items) rest
+  in
+  loop [] tokens
+
+and parse_declaration tokens =
+  let _, storage_class, rest = parse_specifiers tokens in
+  let name, rest = parse_identifier rest in
+  match rest with
+  | LParen :: _ ->
+      let args, rest = parse_params rest in
+      let body, rest = match rest with
+        | Semicolon :: r -> (None, r)
+        | LBrace :: _ -> let b, r = parse_block rest in (Some b, r)
+        | _ -> raise (ParseError "Expected function body or semicolon")
+      in
+      (FunDecl { fd_name = name; fd_params = args; fd_body = body; fd_storage_class = storage_class }, rest)
+  | Assign :: rest ->
+      let exp, rest = parse_exp 0 rest in
+      let rest = expect Semicolon rest in
+      (VarDecl { vd_name = name; vd_init = Some exp; vd_storage_class = storage_class }, rest)
+  | Semicolon :: rest ->
+      (VarDecl { vd_name = name; vd_init = None; vd_storage_class = storage_class }, rest)
+  | _ -> raise (ParseError "Expected variable or function declaration")
+
 let parse_function tokens =
   let decl, tokens = parse_declaration tokens in
   match decl with
@@ -244,6 +258,10 @@ let parse_function tokens =
   | _ -> raise (ParseError "Expected function declaration at top level")
 
 let parse tokens =
-  let rec loop acc toks =
-    match toks with [] -> Program (List.rev acc) | _ -> let d, rest = parse_declaration toks in loop (d :: acc) rest
-  in loop [] tokens
+  let rec loop items toks =
+    if toks = [] then items
+    else
+      let item, rest = parse_declaration toks in
+      loop (item :: items) rest
+  in
+  Program (List.rev (loop [] tokens))

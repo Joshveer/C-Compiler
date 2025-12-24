@@ -35,65 +35,92 @@ let convert_function_call fun_name args dst =
   !instrs
 
 let convert_instruction = function
-  | Tacky.Return v -> [ Asm.Mov (convert_val v, Reg AX); Asm.Ret ]
-  | Tacky.Unary (Tacky.Not, src, dst) -> [ Asm.Cmp (Asm.Imm 0, convert_val src); Asm.Mov (Asm.Imm 0, convert_val dst); Asm.SetCC (Asm.E, convert_val dst) ]
-  | Tacky.Unary (op, src, dst) -> let asm_op = convert_op op in [ Asm.Mov (convert_val src, convert_val dst); Asm.Unary (asm_op, convert_val dst) ]
-  | Tacky.Binary (op, src1, src2, dst) -> (
-      match op with
+  | Tacky.Return v -> [ Mov (convert_val v, Reg AX); Ret ]
+  | Tacky.Unary (op, src, dst) -> [ Mov (convert_val src, convert_val dst); Unary (convert_op op, convert_val dst) ]
+  | Tacky.Binary (op, src1, src2, dst) ->
+      (match op with
       | Tacky.Divide | Tacky.Remainder ->
-          let setup_divisor, divisor_op = match convert_val src2 with Imm _ -> ([ Asm.Mov (convert_val src2, Reg R10) ], Reg R10) | op -> ([], op) in
-          let result_reg = if op = Tacky.Divide then Reg AX else Reg DX in
-          [ Asm.Mov (convert_val src1, Reg AX); Asm.Cdq ] @ setup_divisor @ [ Asm.Idiv divisor_op; Asm.Mov (result_reg, convert_val dst) ]
-      | Tacky.Equal | Tacky.NotEqual | Tacky.LessThan | Tacky.LessOrEqual | Tacky.GreaterThan | Tacky.GreaterOrEqual ->
-          [ Asm.Cmp (convert_val src2, convert_val src1); Asm.Mov (Asm.Imm 0, convert_val dst); Asm.SetCC (convert_cc op, convert_val dst) ]
-      | _ -> [ Asm.Mov (convert_val src1, convert_val dst); Asm.Binary (convert_binop op, convert_val src2, convert_val dst) ])
-  | Tacky.Copy (src, dst) -> [ Asm.Mov (convert_val src, convert_val dst) ]
-  | Tacky.Label l -> [ Asm.Label l ]
-  | Tacky.Jump l -> [ Asm.Jmp l ]
-  | Tacky.JumpIfZero (v, l) -> [ Asm.Cmp (Asm.Imm 0, convert_val v); Asm.JmpCC (Asm.E, l) ]
-  | Tacky.JumpIfNotZero (v, l) -> [ Asm.Cmp (Asm.Imm 0, convert_val v); Asm.JmpCC (Asm.NE, l) ]
+          [ Mov (convert_val src1, Reg AX); Cdq; Idiv (convert_val src2);
+            Mov (Reg (if op = Tacky.Divide then AX else DX), convert_val dst) ]
+      | _ ->
+          [ Mov (convert_val src1, convert_val dst); Binary (convert_binop op, convert_val src2, convert_val dst) ])
+  | Tacky.Jump target -> [ Jmp target ]
+  | Tacky.JumpIfZero (v, target) -> [ Cmp (Imm 0, convert_val v); JmpCC (E, target) ]
+  | Tacky.JumpIfNotZero (v, target) -> [ Cmp (Imm 0, convert_val v); JmpCC (NE, target) ]
+  | Tacky.Label target -> [ Label target ]
+  | Tacky.Copy (src, dst) -> [ Mov (convert_val src, convert_val dst) ]
   | Tacky.FunCall (name, args, dst) -> convert_function_call name args dst
 
-let rec replace_pseudo_op op map count symbols =
-  match op with
-  | Pseudo name ->
-      (match Hashtbl.find_opt map name with
-       | Some s -> Stack s
-       | None ->
-           (match StringMap.find_opt name symbols with
-            | Some entry when (match entry.sym_attrs with StaticAttr _ -> true | _ -> false) -> Data name
-            | _ -> let offset = !count in count := !count - 4; Hashtbl.add map name offset; Stack offset))
-  | _ -> op
-
-let replace_pseudo_instr instr map count symbols =
+let rec replace_pseudo_instr instr map count symbols =
+  let get_offset pseudo =
+    if Hashtbl.mem map pseudo then Hashtbl.find map pseudo
+    else
+      match StringMap.find_opt pseudo symbols with
+      | Some { Semanticanalysis.sym_attrs = Semanticanalysis.StaticAttr _ } ->
+          Asm.Data pseudo
+      | _ ->
+          let offset = !count in count := !count - 4;
+          let operand = Asm.Stack offset in
+          Hashtbl.add map pseudo operand;
+          operand
+  in
+  let replace_operand = function
+    | Pseudo p -> get_offset p
+    | other -> other
+  in
   match instr with
-  | Mov (src, dst) -> Mov (replace_pseudo_op src map count symbols, replace_pseudo_op dst map count symbols)
-  | Unary (op, dst) -> Unary (op, replace_pseudo_op dst map count symbols)
-  | Binary (op, src, dst) -> Binary (op, replace_pseudo_op src map count symbols, replace_pseudo_op dst map count symbols)
-  | Cmp (op1, op2) -> Cmp (replace_pseudo_op op1 map count symbols, replace_pseudo_op op2 map count symbols)
-  | SetCC (cc, op) -> SetCC (cc, replace_pseudo_op op map count symbols)
-  | Idiv op -> Idiv (replace_pseudo_op op map count symbols)
-  | Push op -> Push (replace_pseudo_op op map count symbols)
-  | _ -> instr
+  | Mov (src, dst) -> Mov (replace_operand src, replace_operand dst)
+  | Unary (op, dst) -> Unary (op, replace_operand dst)
+  | Binary (op, src, dst) -> Binary (op, replace_operand src, replace_operand dst)
+  | Cmp (src, dst) -> Cmp (replace_operand src, replace_operand dst)
+  | Idiv op -> Idiv (replace_operand op)
+  | SetCC (cc, dst) -> SetCC (cc, replace_operand dst)
+  | Push op -> Push (replace_operand op)
+  | other -> other
 
-let rec fixup instrs =
-  match instrs with
-  | [] -> []
-  | Asm.Binary (Asm.Mult, src, Asm.Stack s) :: rest -> Asm.Mov (Asm.Stack s, Asm.Reg R11) :: Asm.Binary (Asm.Mult, src, Asm.Reg R11) :: Asm.Mov (Asm.Reg R11, Asm.Stack s) :: fixup rest
-  | Asm.Idiv (Asm.Imm i) :: rest -> Asm.Mov (Asm.Imm i, Asm.Reg R10) :: Asm.Idiv (Asm.Reg R10) :: fixup rest
-  | Asm.Cmp (Asm.Stack s1, Asm.Stack s2) :: rest -> Asm.Mov (Asm.Stack s1, Asm.Reg R10) :: Asm.Cmp (Asm.Reg R10, Asm.Stack s2) :: fixup rest
-  | Asm.Cmp (src, Asm.Imm i) :: rest -> Asm.Mov (Asm.Imm i, Asm.Reg R11) :: Asm.Cmp (src, Asm.Reg R11) :: fixup rest
-  | Asm.Mov (Asm.Stack s, Asm.Data d) :: rest -> Asm.Mov (Asm.Stack s, Asm.Reg R10) :: Asm.Mov (Asm.Reg R10, Asm.Data d) :: fixup rest
-  | Asm.Mov (Asm.Data d, Asm.Stack s) :: rest -> Asm.Mov (Asm.Data d, Asm.Reg R10) :: Asm.Mov (Asm.Reg R10, Asm.Stack s) :: fixup rest
-  | Asm.Mov (Asm.Data d1, Asm.Data d2) :: rest -> Asm.Mov (Asm.Data d1, Asm.Reg R10) :: Asm.Mov (Asm.Reg R10, Asm.Data d2) :: fixup rest
-  | Asm.Mov (Asm.Stack s1, Asm.Stack s2) :: rest -> Asm.Mov (Asm.Stack s1, Asm.Reg R10) :: Asm.Mov (Asm.Reg R10, Asm.Stack s2) :: fixup rest
-  | Asm.Binary (op, Asm.Data d, dst) :: rest -> Asm.Mov (Asm.Data d, Asm.Reg R10) :: Asm.Binary (op, Asm.Reg R10, dst) :: fixup rest
-  | Asm.Binary (op, src, Asm.Data d) :: rest -> Asm.Mov (src, Asm.Reg R10) :: Asm.Binary (op, Asm.Reg R10, Asm.Data d) :: fixup rest
-  | Asm.Binary (op, Asm.Stack s1, Asm.Stack s2) :: rest -> Asm.Mov (Asm.Stack s1, Asm.Reg R10) :: Asm.Binary (op, Asm.Reg R10, Asm.Stack s2) :: fixup rest
-  | Asm.Push (Asm.Stack s) :: rest -> Asm.Mov (Asm.Stack s, Asm.Reg R10) :: Asm.Push (Asm.Reg R10) :: fixup rest
-  | i :: rest -> i :: fixup rest
+let fixup instrs =
+  let rec loop acc = function
+    | [] -> List.rev acc
+    | Mov (Stack s1, Stack s2) :: rest ->
+        loop (Mov (Reg R10, Stack s2) :: Mov (Stack s1, Reg R10) :: acc) rest
+    | Mov (Data d1, Data d2) :: rest ->
+        loop (Mov (Reg R10, Data d2) :: Mov (Data d1, Reg R10) :: acc) rest
+    | Mov (Data d, Stack s) :: rest ->
+        loop (Mov (Reg R10, Stack s) :: Mov (Data d, Reg R10) :: acc) rest
+    | Mov (Stack s, Data d) :: rest ->
+        loop (Mov (Reg R10, Data d) :: Mov (Stack s, Reg R10) :: acc) rest
+    | Binary (op, Stack s1, Stack s2) :: rest ->
+        loop (Binary (op, Reg R10, Stack s2) :: Mov (Stack s1, Reg R10) :: acc) rest
+    | Binary (op, Data d1, Data d2) :: rest ->
+        loop (Binary (op, Reg R10, Data d2) :: Mov (Data d1, Reg R10) :: acc) rest
+    | Binary (op, Data d, Stack s) :: rest ->
+        loop (Binary (op, Reg R10, Stack s) :: Mov (Data d, Reg R10) :: acc) rest
+    | Binary (op, Stack s, Data d) :: rest ->
+        loop (Binary (op, Reg R10, Data d) :: Mov (Stack s, Reg R10) :: acc) rest
+    | Binary (Mult, Stack s, Reg r) :: rest ->
+        loop (Binary (Mult, Reg R11, Reg r) :: Mov (Stack s, Reg R11) :: acc) rest
+    | Binary (Mult, Data d, Reg r) :: rest ->
+        loop (Binary (Mult, Reg R11, Reg r) :: Mov (Data d, Reg R11) :: acc) rest
+    | Idiv (Imm i) :: rest ->
+        loop (Idiv (Reg R10) :: Mov (Imm i, Reg R10) :: acc) rest
+    | Cmp (Stack s1, Stack s2) :: rest ->
+        loop (Cmp (Reg R10, Stack s2) :: Mov (Stack s1, Reg R10) :: acc) rest
+    | Cmp (Data d1, Data d2) :: rest ->
+        loop (Cmp (Reg R10, Data d2) :: Mov (Data d1, Reg R10) :: acc) rest
+    | Cmp (Data d, Stack s) :: rest ->
+        loop (Cmp (Reg R10, Stack s) :: Mov (Data d, Reg R10) :: acc) rest
+    | Cmp (Stack s, Data d) :: rest ->
+        loop (Cmp (Reg R10, Data d) :: Mov (Stack s, Reg R10) :: acc) rest
+    | Cmp (Imm i, Stack s) :: rest ->
+        loop (Cmp (Reg R10, Stack s) :: Mov (Imm i, Reg R10) :: acc) rest
+    | Cmp (Imm i, Data d) :: rest ->
+        loop (Cmp (Reg R10, Data d) :: Mov (Imm i, Reg R10) :: acc) rest
+    | i :: rest -> loop (i :: acc) rest
+  in
+  loop [] instrs
 
-let gen_function top symbols = match top with
+let gen_function top symbols =
+  match top with
   | Tacky.Function (name, global, params, body) ->
       let param_instrs = ref [] in
       List.iteri (fun i p -> if i < 6 then param_instrs := !param_instrs @ [ Mov (Reg (List.nth arg_registers i), Pseudo p) ] else let offset = 16 + (8 * (i - 6)) in param_instrs := !param_instrs @ [ Mov (Stack offset, Pseudo p) ]) params;

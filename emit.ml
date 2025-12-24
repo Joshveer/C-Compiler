@@ -8,23 +8,30 @@ let emit_reg8 = function AX -> "%al" | CX -> "%cl" | DX -> "%dl" | DI -> "%dil" 
 let emit_operand = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg r | Stack i -> sprintf "%d(%%rbp)" i | Data s -> let prefix = if Sys.os_type = "Unix" then "_" else "" in sprintf "%s%s(%%rip)" prefix s | Pseudo _ -> failwith "Pseudo error"
 let emit_operand64 = function Imm i -> sprintf "$%d" i | Reg r -> emit_reg64 r | Stack i -> sprintf "%d(%%rbp)" i | Data s -> let prefix = if Sys.os_type = "Unix" then "_" else "" in sprintf "%s%s(%%rip)" prefix s | Pseudo _ -> failwith "Pseudo error"
 
-let emit_unary_op = function Neg -> "negl" | Not -> "notl"
-let emit_binop = function Add -> "addl" | Sub -> "subl" | Mult -> "imull" | And -> "andl" | Or -> "orl" | Xor -> "xorl" | Shl -> "sall" | Shr -> "sarl"
-let emit_cc = function E -> "e" | NE -> "ne" | G -> "g" | GE -> "ge" | L -> "l" | LE -> "le"
-let emit_local_label l = sprintf "L%s" l
+let emit_cond_code = function E -> "e" | NE -> "ne" | G -> "g" | GE -> "ge" | L -> "l" | LE -> "le"
+
+let emit_local_label l = sprintf ".%s" l
 
 let emit_instruction = function
-  | Mov (src, dst) -> sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
-  | Unary (op, dst) -> sprintf "    %s %s\n" (emit_unary_op op) (emit_operand dst)
+  | Mov (src, dst) ->
+      (match (src, dst) with
+      | (Reg _, Reg _) | (Imm _, Reg _) | (Stack _, Reg _) | (Data _, Reg _) -> sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
+      | (Reg _, Stack _) | (Imm _, Stack _) | (Reg _, Data _) -> sprintf "    movl %s, %s\n" (emit_operand src) (emit_operand dst)
+      | _ -> failwith "Invalid operand combination")
+  | Unary (op, dst) ->
+      let instr = match op with Neg -> "neg" | Not -> "not" in
+      sprintf "    %sl %s\n" instr (emit_operand dst)
   | Binary (op, src, dst) ->
-      let src_str = match op, src with (Shl, Reg CX) | (Shr, Reg CX) -> "%cl" | _ -> emit_operand src in
-      sprintf "    %s %s, %s\n" (emit_binop op) src_str (emit_operand dst)
-  | Cmp (op1, op2) -> sprintf "    cmpl %s, %s\n" (emit_operand op1) (emit_operand op2)
-  | Idiv src -> sprintf "    idivl %s\n" (emit_operand src)
+      let instr = match op with Add -> "add" | Sub -> "sub" | Mult -> "imul" | And -> "and" | Or -> "or" | Xor -> "xor" | Shl -> "shl" | Shr -> "sar" in
+      sprintf "    %sl %s, %s\n" instr (emit_operand src) (emit_operand dst)
+  | Cmp (src, dst) -> sprintf "    cmpl %s, %s\n" (emit_operand src) (emit_operand dst)
+  | Idiv op -> sprintf "    idivl %s\n" (emit_operand op)
   | Cdq -> "    cdq\n"
   | Jmp target -> sprintf "    jmp %s\n" (emit_local_label target)
-  | JmpCC (cc, target) -> sprintf "    j%s %s\n" (emit_cc cc) (emit_local_label target)
-  | SetCC (cc, op) -> sprintf "    set%s %s\n" (emit_cc cc) (match op with Reg r -> emit_reg8 r | _ -> emit_operand op)
+  | JmpCC (cc, target) -> sprintf "    j%s %s\n" (emit_cond_code cc) (emit_local_label target)
+  | SetCC (cc, dst) ->
+      let r = match dst with Reg r -> r | _ -> failwith "SetCC only supports register" in
+      sprintf "    set%s %s\n    movzbl %s, %s\n" (emit_cond_code cc) (emit_reg8 r) (emit_reg8 r) (emit_reg r)
   | Label l -> sprintf "%s:\n" (emit_local_label l)
   | AllocateStack i -> sprintf "    subq $%d, %%rsp\n" i
   | DeallocateStack i -> sprintf "    addq $%d, %%rsp\n" i
@@ -44,11 +51,9 @@ let emit_top_level = function
       let global_directive = if global then sprintf "    .globl %s\n" name else "" in
       let section = if init = 0 then ".bss" else ".data" in
       let alignment = if Sys.os_type = "Unix" then "    .balign 4\n" else "    .align 4\n" in
-      if init = 0 then
-        sprintf "%s    %s\n%s%s:\n    .zero 4\n" global_directive section alignment name
-      else
-        sprintf "%s    %s\n%s%s:\n    .long %d\n" global_directive section alignment name init
+      let value = if init = 0 then sprintf "    .zero 4\n" else sprintf "    .long %d\n" init in
+      sprintf "%s    %s\n%s%s:\n%s%s" section alignment global_directive name alignment value
 
 let emit_program (Program tops) =
-  let text = String.concat "\n" (List.map emit_top_level tops) in
-  text
+  let code = String.concat "\n" (List.map emit_top_level tops) in
+  sprintf "    .section .note.GNU-stack,\"\",@progbits\n%s\n" code
